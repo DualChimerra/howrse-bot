@@ -114,7 +114,7 @@ ipcMain.handle('storage:saveGlobalSettings', async (_e, settings) => saveGlobalS
 // IPC: http client factory usage, no network from renderer
 ipcMain.handle('http:request', async (_e, args: { baseUrl: string, proxy?: string, clientType: 'new'|'old', method: 'GET'|'POST', url: string, data?: string }) => {
   const { baseUrl, proxy, clientType, method, url, data } = args
-  const client = getClientFactory()(clientType, baseUrl, proxy)
+  const client = await getClientFactory()(clientType, baseUrl, proxy)
   if (method === 'GET') return client.get(url)
   return client.post(url, data ?? '')
 })
