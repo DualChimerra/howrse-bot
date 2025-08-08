@@ -1,76 +1,88 @@
-import got, { OptionsOfTextResponseBody } from 'got'
+import fetch, { RequestInit, Headers } from 'node-fetch'
+import fetchCookie from 'fetch-cookie'
 import { CookieJar } from 'tough-cookie'
-import { HttpsProxyAgent } from 'https-proxy-agent'
-import { HttpProxyAgent } from 'http-proxy-agent'
+import { buildAgents } from './proxy'
 import type { IClient } from './IClient'
+import { saveCookieJar } from './cookies'
+
+const fetchWithCookies = (jar: CookieJar) => fetchCookie(fetch, jar)
+const REQUEST_TIMEOUT_MS = 45000
 
 export default class ClientFetch implements IClient {
+  baseAddress: string
   cookieJar: CookieJar
-  baseUrl: string
   sid?: string
-  private requester: ReturnType<typeof got.extend>
+  abortController: AbortController
+  private proxyUrl?: string
+  private jarKey?: string
 
-  constructor(baseUrl: string, cookieJar: CookieJar, proxy?: string) {
-    this.baseUrl = baseUrl
-    this.cookieJar = cookieJar
+  constructor(baseAddress: string, jar: CookieJar, proxy?: string, jarKey?: string) {
+    this.baseAddress = baseAddress
+    this.cookieJar = jar
+    this.proxyUrl = proxy
+    this.abortController = new AbortController()
+    this.jarKey = jarKey
+  }
 
-    const agent = proxy ? {
-      http: new HttpProxyAgent(proxy),
-      https: new HttpsProxyAgent(proxy),
-    } : undefined
-
-    this.requester = got.extend({
-      prefixUrl: baseUrl,
-      cookieJar: this.cookieJar,
-      agent,
-      headers: {
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36',
-        'accept-encoding': 'gzip, deflate, br',
-        'connection': 'keep-alive',
-        'x-requested-with': 'XMLHttpRequest'
-      },
-      decompress: true,
-      followRedirect: true,
-      retry: { limit: 0 },
-      throwHttpErrors: false,
-      hooks: {
-        afterResponse: [res => {
-          const cookies = res.headers['set-cookie']
-          if (cookies) {
-            for (const str of cookies) {
-              if (str.includes('sessionprod=')) {
-                const value = /sessionprod=([^;]+)/.exec(str)?.[1]
-                if (value) this.sid = value
-              }
-            }
-          }
-          return res
-        }]
-      }
+  setSID() {
+    this.cookieJar.getCookies(this.baseAddress, (err, cookies) => {
+      if (err) return
+      const sid = cookies.find(c => c.key === 'sessionprod')?.value
+      if (sid) this.sid = sid
     })
   }
 
-  private async exec<T extends 'GET'|'POST'>(method: T, url: string, body?: string): Promise<string> {
+  private defaultHeaders(): Headers {
+    const h = new Headers()
+    h.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36 OPR/95.0.0.0')
+    h.set('Connection', 'keep-alive')
+    h.set('Accept-Encoding', 'gzip, deflate, br, zstd')
+    h.set('Origin', this.baseAddress)
+    h.set('Upgrade-Insecure-Requests', '1')
+    h.set('X-Requested-With', 'XMLHttpRequest')
+    return h
+  }
+
+  private async exec(method: 'GET'|'POST', url: string, body?: string): Promise<string> {
     let answer = ''
     let ok = false
+    const fo = fetchWithCookies(this.cookieJar)
+    const agents = buildAgents(this.proxyUrl)
+
     while (!ok) {
+      const headers = this.defaultHeaders()
+      const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      const signal = AbortSignal.any([this.abortController.signal, timeoutSignal])
+      const init: RequestInit = {
+        method,
+        headers,
+        signal,
+        redirect: 'follow',
+      }
+      if (method === 'POST') {
+        headers.set('Content-Type', 'application/x-www-form-urlencoded')
+        init.body = body
+      }
+      if (agents) {
+        init.agent = (parsedURL: URL) => parsedURL.protocol === 'http:' ? agents.http : agents.https
+      }
       try {
-        const options: OptionsOfTextResponseBody = {}
-        if (method === 'POST') {
-          options.body = body
-          options.headers = { 'content-type': 'application/x-www-form-urlencoded' }
-        }
-        const res = await this.requester(url, { method, ...options })
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          answer = res.body
+        const res = await fo(this.baseAddress + url, init)
+        if (res.ok) {
+          answer = await res.text()
           ok = true
         } else {
-          // retry on non-2xx like original loop
+          // retry
         }
-      } catch {
-        // retry
+      } catch (e: any) {
+        if (this.abortController.signal.aborted) {
+          throw e
+        }
+        // timeout or transient error => retry
       }
     }
+    this.setSID()
+    if (this.jarKey) await saveCookieJar(this.cookieJar, this.jarKey)
     return answer
   }
 
