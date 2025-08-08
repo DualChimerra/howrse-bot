@@ -5,6 +5,7 @@ import { format } from 'node:url'
 import { existsSync } from 'node:fs'
 import { loadAccounts, loadGlobalSettings, saveAccounts, saveGlobalSettings } from '../src/main/storage/XmlHelper.js'
 import { getClientFactory } from '../src/main/http/IClient.js'
+import '../src/main/index.js'
 
 const isMac = process.platform === 'darwin'
 const __dirname2 = fileURLToPath(new URL('.', import.meta.url))

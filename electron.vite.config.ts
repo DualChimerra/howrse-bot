@@ -10,6 +10,11 @@ export default defineConfig({
       rollupOptions: {
         input: resolve(__dirname, 'electron/main.ts')
       }
+    },
+    resolve: {
+      alias: {
+        '@common': resolve(__dirname, 'src/common'),
+      }
     }
   },
   preload: {
@@ -30,6 +35,11 @@ export default defineConfig({
     server: {
       port: 5173,
       strictPort: true
+    },
+    resolve: {
+      alias: {
+        '@common': resolve(__dirname, 'src/common'),
+      }
     }
   }
 })

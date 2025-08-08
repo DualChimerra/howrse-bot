@@ -9,6 +9,35 @@ contextBridge.exposeInMainWorld('api', {
   },
   http: {
     request: (args: { baseUrl: string, proxy?: string, clientType: 'new'|'old', method: 'GET'|'POST', url: string, data?: string }) => ipcRenderer.invoke('http:request', args)
+  },
+  state: {
+    init: () => ipcRenderer.invoke('state:init'),
+    get: () => ipcRenderer.invoke('state:get'),
+    selectAccount: (idx: number) => ipcRenderer.invoke('state:selectAccount', idx),
+  },
+  accounts: {
+    add: (acc: unknown) => ipcRenderer.invoke('accounts:add', acc),
+    removeSelected: () => ipcRenderer.invoke('accounts:removeSelected'),
+    saveAll: () => ipcRenderer.invoke('accounts:saveAll'),
+    loadAll: () => ipcRenderer.invoke('accounts:loadAll'),
+  },
+  settings: {
+    apply: (settings: unknown, scope: 'global'|'single') => ipcRenderer.invoke('settings:apply', settings, scope),
+  },
+  login: {
+    normal: (idx: number, load: boolean) => ipcRenderer.invoke('login:normal', idx, load),
+    co: (idx: number, loginCo: string, load: boolean) => ipcRenderer.invoke('login:co', idx, loginCo, load),
+  },
+  farms: {
+    load: (idx: number) => ipcRenderer.invoke('farms:load', idx),
+  },
+  work: {
+    startSingle: (idx: number) => ipcRenderer.invoke('work:startSingle', idx),
+    stopAll: () => ipcRenderer.invoke('work:stopAll'),
+  },
+  events: {
+    onStatusUpdate: (cb: (payload: any) => void) => ipcRenderer.on('status:update', (_e, p) => cb(p)),
+    onNotify: (cb: (payload: any) => void) => ipcRenderer.on('notify', (_e, p) => cb(p)),
   }
 })
 
@@ -23,6 +52,35 @@ declare global {
       }
       http: {
         request: (args: { baseUrl: string, proxy?: string, clientType: 'new'|'old', method: 'GET'|'POST', url: string, data?: string }) => Promise<string>
+      }
+      state: {
+        init: () => Promise<any>
+        get: () => Promise<any>
+        selectAccount: (idx: number) => Promise<boolean>
+      }
+      accounts: {
+        add: (acc: unknown) => Promise<boolean>
+        removeSelected: () => Promise<boolean>
+        saveAll: () => Promise<boolean>
+        loadAll: () => Promise<any>
+      }
+      settings: {
+        apply: (settings: unknown, scope: 'global'|'single') => Promise<boolean>
+      }
+      login: {
+        normal: (idx: number, load: boolean) => Promise<boolean>
+        co: (idx: number, loginCo: string, load: boolean) => Promise<boolean>
+      }
+      farms: {
+        load: (idx: number) => Promise<any>
+      }
+      work: {
+        startSingle: (idx: number) => Promise<boolean>
+        stopAll: () => Promise<boolean>
+      }
+      events: {
+        onStatusUpdate: (cb: (payload: any) => void) => void
+        onNotify: (cb: (payload: any) => void) => void
       }
     }
   }
