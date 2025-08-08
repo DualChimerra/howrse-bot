@@ -20,20 +20,39 @@ contextBridge.exposeInMainWorld('api', {
     removeSelected: () => ipcRenderer.invoke('accounts:removeSelected'),
     saveAll: () => ipcRenderer.invoke('accounts:saveAll'),
     loadAll: () => ipcRenderer.invoke('accounts:loadAll'),
+    saveCoSelected: () => ipcRenderer.invoke('accounts:saveCoSelected'),
   },
   settings: {
     apply: (settings: unknown, scope: 'global'|'single') => ipcRenderer.invoke('settings:apply', settings, scope),
+    saveToFile: (settings: unknown) => ipcRenderer.invoke('settings:saveToFile', settings),
+    loadFromFile: () => ipcRenderer.invoke('settings:loadFromFile'),
   },
   login: {
     normal: (idx: number, load: boolean) => ipcRenderer.invoke('login:normal', idx, load),
     co: (idx: number, loginCo: string, load: boolean) => ipcRenderer.invoke('login:co', idx, loginCo, load),
+    listCo: (idx: number) => ipcRenderer.invoke('login:listCo', idx),
+    logoutCo: (idx: number) => ipcRenderer.invoke('login:logoutCo', idx),
   },
   farms: {
     load: (idx: number) => ipcRenderer.invoke('farms:load', idx),
+    addToQueue: (idx: number, farmId: string) => ipcRenderer.invoke('farms:addToQueue', idx, farmId),
+    removeFromQueue: (idx: number, farmId: string) => ipcRenderer.invoke('farms:removeFromQueue', idx, farmId),
+    clearQueue: (idx: number) => ipcRenderer.invoke('farms:clearQueue', idx),
+  },
+  products: {
+    buy: (idx: number, type: number, quantity: string) => ipcRenderer.invoke('products:buy', idx, type, quantity),
+    sell: (idx: number, type: number, quantity: string) => ipcRenderer.invoke('products:sell', idx, type, quantity),
   },
   work: {
     startSingle: (idx: number) => ipcRenderer.invoke('work:startSingle', idx),
+    startAll: () => ipcRenderer.invoke('work:startAll'),
+    stopSingle: (idx: number) => ipcRenderer.invoke('work:stopSingle', idx),
     stopAll: () => ipcRenderer.invoke('work:stopAll'),
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    close: () => ipcRenderer.invoke('window:close'),
   },
   events: {
     onStatusUpdate: (cb: (payload: any) => void) => ipcRenderer.on('status:update', (_e, p) => cb(p)),
@@ -63,20 +82,39 @@ declare global {
         removeSelected: () => Promise<boolean>
         saveAll: () => Promise<boolean>
         loadAll: () => Promise<any>
+        saveCoSelected: () => Promise<boolean>
       }
       settings: {
         apply: (settings: unknown, scope: 'global'|'single') => Promise<boolean>
+        saveToFile: (settings: unknown) => Promise<boolean>
+        loadFromFile: () => Promise<any>
       }
       login: {
         normal: (idx: number, load: boolean) => Promise<boolean>
         co: (idx: number, loginCo: string, load: boolean) => Promise<boolean>
+        listCo: (idx: number) => Promise<string[]>
+        logoutCo: (idx: number) => Promise<boolean>
       }
       farms: {
         load: (idx: number) => Promise<any>
+        addToQueue: (idx: number, farmId: string) => Promise<boolean>
+        removeFromQueue: (idx: number, farmId: string) => Promise<boolean>
+        clearQueue: (idx: number) => Promise<boolean>
+      }
+      products: {
+        buy: (idx: number, type: number, quantity: string) => Promise<boolean>
+        sell: (idx: number, type: number, quantity: string) => Promise<boolean>
       }
       work: {
         startSingle: (idx: number) => Promise<boolean>
+        startAll: () => Promise<boolean>
+        stopSingle: (idx: number) => Promise<boolean>
         stopAll: () => Promise<boolean>
+      }
+      window: {
+        minimize: () => Promise<void>
+        maximize: () => Promise<void>
+        close: () => Promise<void>
       }
       events: {
         onStatusUpdate: (cb: (payload: any) => void) => void
