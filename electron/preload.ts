@@ -68,6 +68,10 @@ const api = {
     onNotify: (cb: (payload: any) => void) => ipcRenderer.on('notify', (_e, payload) => cb(payload)),
     onStatusUpdate: (cb: (payload: any) => void) => ipcRenderer.on('status:update', (_e, payload) => cb(payload)),
   },
+  // resources
+  resources: {
+    get: (name: 'ruFlag'|'usaFlag'|'logo'|'arrow') => ipcRenderer.invoke('resources:get', name),
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -7,6 +7,8 @@ import type { Account, GlobalSettings, Settings } from '@common/types'
 import { ProductType, WorkType, ClientType, Server } from '@common/enums'
 import { Farm } from './logic/Farm'
 import { Scheduler } from './logic/Scheduler'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // In-memory state reflecting WPF MainViewModel
 const state = {
@@ -38,6 +40,24 @@ function notifyAll(channel: string, payload: any) {
     w.webContents.send(channel, payload)
   }
 }
+
+// Resources IPC
+ipcMain.handle('resources:get', async (_e, name: 'ruFlag'|'usaFlag'|'logo'|'arrow') => {
+  const map: Record<string, string> = {
+    ruFlag: 'ruFlag.png',
+    usaFlag: 'usaFlag.png',
+    logo: 'startlogo.png',
+    arrow: 'Arrow.png',
+  }
+  const file = map[name]
+  if (!file) return null
+  try {
+    const p = join(process.resourcesPath, 'resources', file)
+    const buf = readFileSync(p)
+    const b64 = `data:image/${file.endsWith('.png')?'png':'ico'};base64,${buf.toString('base64')}`
+    return b64
+  } catch { return null }
+})
 
 // IPC: window controls
 ipcMain.handle('window:minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); w?.minimize() })

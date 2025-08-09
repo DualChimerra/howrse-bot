@@ -4,18 +4,24 @@ import i18n from './i18n'
 
 export default function App() {
   const { pathname } = useLocation()
+  const [flag, setFlag] = React.useState<string>('')
+  React.useEffect(() => { (async () => { const s = await window.api.state.get(); const isRu = (s.globalSettings?.Localization ?? 0) === 0; const img = await window.api.resources.get(isRu ? 'ruFlag' : 'usaFlag'); setFlag(img||'') })() }, [])
   const toggleLang = async () => {
     const state = await window.api.state.get()
     const current = state.globalSettings?.Localization ?? 0
     const next = current === 0 ? 1 : 0
     await window.api.globals.update({ Localization: next })
     i18n.changeLanguage(next === 0 ? 'ru' : 'en')
+    const img = await window.api.resources.get(next === 0 ? 'ruFlag' : 'usaFlag')
+    setFlag(img||'')
   }
+  const [logo, setLogo] = React.useState<string>('')
+  React.useEffect(() => { (async () => { const img = await window.api.resources.get('logo'); setLogo(img||'') })() }, [])
   return (
     <div className="h-full flex flex-col">
       <div className="h-10 flex items-center justify-between px-2 select-none bg-[#202225]" style={{ WebkitAppRegion: 'drag' }}>
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-          <div className="w-5 h-5 bg-white/10 rounded-sm" />
+          {logo ? <img src={logo} alt="logo" className="w-5 h-5 rounded-sm" /> : <div className="w-5 h-5 bg-white/10 rounded-sm" />}
           <button className="px-1 py-0.5 text-xs" onClick={()=>{ /* open side menu already in page */ }}>
             ☰
           </button>
@@ -23,7 +29,7 @@ export default function App() {
             ⚙
           </button>
           <button className="px-1 py-0.5 text-xs" onClick={toggleLang}>
-            🌐
+            {flag ? <img src={flag} alt="lang" className="w-5 h-5" /> : '🌐'}
           </button>
         </div>
         <div className="text-sm text-white">Bot Qually</div>

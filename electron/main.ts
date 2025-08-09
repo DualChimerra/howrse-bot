@@ -80,7 +80,7 @@ async function createWindow() {
 
 function setupTray() {
   try {
-    const iconPath = join(process.resourcesPath, 'icon.png')
+    const iconPath = join(process.resourcesPath, 'resources', 'startlogo.png')
     const icon = existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty()
     tray = new Tray(icon)
     const menu = Menu.buildFromTemplate([
