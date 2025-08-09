@@ -392,3 +392,60 @@ ipcMain.handle('work:stopAll', async () => {
   controllers.clear()
   return true
 })
+
+// Dev-only autorun for My other horses
+async function devAutoRunMyOther() {
+  if (process.env.AUTO_RUN_MYOTHER !== '1') return
+  const loginEnv = process.env.HOWRSE_LOGIN || ''
+  const passEnv = process.env.HOWRSE_PASSWORD || ''
+  if (!loginEnv || !passEnv) return
+  const serverEnv = Number(process.env.HOWRSE_SERVER || '')
+  const server = Number.isFinite(serverEnv) ? serverEnv as any : Server.International
+
+  // ensure global settings
+  if (!state.globalSettings) {
+    const globals = await loadGlobalSettings() as any
+    state.globalSettings = globals || { Sort: 'age', WorkType: WorkType.SingleOrder, ClientType: ClientType.New, ParallelHorse: false, RandomPause: false, Tray: true, MoneyNotification: false, Localization: 0, Settings: {} as any }
+  }
+
+  // ensure an account exists
+  let acc = state.accounts[0]
+  if (!acc) {
+    acc = {
+      Login: loginEnv,
+      Password: passEnv,
+      Server: server,
+      Type: 0,
+      PrivateSettings: {} as any,
+      ProxyIP: '', ProxyLogin: '', ProxyPassword: '',
+      FarmsQueue: [''],
+    } as any
+    state.accounts = [acc as any]
+  } else {
+    acc.Login = loginEnv
+    acc.Password = passEnv
+    acc.Server = server as any
+    acc.FarmsQueue = acc.FarmsQueue && Array.isArray(acc.FarmsQueue) ? acc.FarmsQueue : []
+    if (!acc.FarmsQueue.includes('')) acc.FarmsQueue.push('')
+  }
+  state.selectedAccountIndex = 0
+  await saveAccounts(state.accounts)
+
+  // run single using same logic
+  const logic = await toLogic(acc as any)
+  const farms = ((acc as any).FarmsQueue || []).map((fid: string) => new Farm('', fid, logic))
+  if (farms.length === 0) farms.push(new Farm('all', '', logic))
+  const controller = new AbortController()
+  const scheduler = new Scheduler()
+  try {
+    const tasks = farms.map((farm) => async (signal?: AbortSignal) => farm.run(state.globalSettings!, signal || controller.signal))
+    await scheduler.run(tasks, WorkType.SingleOrder, { concurrency: 1, randomPause: !!state.globalSettings?.RandomPause, minPauseMs: 50, maxPauseMs: 100, signal: controller.signal })
+    await saveAccounts(state.accounts)
+  } catch {}
+  if (process.env.AUTO_EXIT === '1') {
+    app.quit()
+  }
+}
+
+// schedule autorun
+setTimeout(() => { devAutoRunMyOther().catch(()=>{}) }, 2000)
