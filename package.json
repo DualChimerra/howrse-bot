@@ -15,7 +15,8 @@
     "test:run-account": "node --loader ts-node/esm scripts/run-account.ts",
     "test:login": "node --loader ts-node/esm scripts/run-login.ts",
     "test:myother": "node --loader ts-node/esm scripts/run-my-other.ts",
-    "self-check": "node scripts/self_check.js"
+    "self-check": "node scripts/self_check.js",
+    "i18n:sync": "node scripts/sync_i18n.cjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",

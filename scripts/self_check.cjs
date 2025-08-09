@@ -58,7 +58,7 @@ function section1() {
   const uiReactCounts = reactPages.map(f=>{
     const t = read(f)
     const btns = (t.match(/<button\b/g)||[]).length
-    const handlers = (t.match(/onClick=|window\.api\./g)||[]).length
+    const handlers = (t.match(/onClick=|onChange=/g)||[]).length
     return { file: path.basename(f), buttons: btns, handlers }
   })
 
@@ -76,8 +76,8 @@ function section1() {
     items.push({ xaml: name, vm, react: 'App.tsx / electron main window', cmds: [], names: [] })
   }
 
-  const totalXamlControls = items.reduce((s, it)=> s + it.names.length + it.cmds.length, 0)
-  const totalReactControls = uiReactCounts.reduce((s,it)=> s + it.buttons + it.handlers, 0)
+  const totalXamlControls = items.reduce((s, it)=> s + it.cmds.length, 0)
+  const totalReactControls = uiReactCounts.reduce((s,it)=> s + it.handlers, 0)
 
   return { items, uiReactCounts, totals: { total_XAML_controls: totalXamlControls, total_React_controls: totalReactControls } }
 }
@@ -111,8 +111,9 @@ function section3() {
     const enums = {}
     for (const m of text.matchAll(/public\s+enum\s+(\w+)\s*\{([\s\S]*?)\}/g)) {
       const name = m[1]
-      const body = m[2]
-      const members = body.split(',').map(s=>s.trim()).filter(Boolean).map(s=>s.replace(/\[.*?\]\s*/g,'').split('=')[0].trim())
+      let body = m[2]
+      body = body.replace(/\[[\s\S]*?\]\s*/g, '')
+      const members = body.split(',').map(s=>s.trim()).filter(Boolean).map(s=>s.split('=')[0].trim())
       enums[name] = members
     }
     return enums
@@ -195,15 +196,19 @@ function section5() {
   // electron main flags
   const mainTxt = read(paths.electronMain)
   const preload = /preload:\s*getPreloadPath\(\)/.test(mainTxt)
-  const ctxIso = /contextIsolation:\s*true/.test(mainTxt)
-  const nodeInt = /nodeIntegration:\s*false/.test(mainTxt)
-  const sandbox = /sandbox:\s*true/.test(mainTxt)
+  const ctxIso = (mainTxt.match(/contextIsolation:\s*(true|false)/)?.[1] || 'unknown')
+  const nodeInt = (mainTxt.match(/nodeIntegration:\s*(true|false)/)?.[1] || 'unknown')
+  const sandbox = (mainTxt.match(/sandbox:\s*(true|false)/)?.[1] || 'unknown')
   // headers compare
   const cs = read(paths.clientCs)
   const ts = read(paths.clientFetchTs)
   function headersFromCs(text) {
     const set = new Set()
-    for (const m of text.matchAll(/DefaultRequestHeaders\.(\w+)/g)) set.add(m[1])
+    const alias = { UserAgent: 'User-Agent', AcceptLanguage: 'Accept-Language', AcceptEncoding: 'Accept-Encoding', Connection: 'Connection', Host: 'Host', Accept: 'Accept' }
+    for (const m of text.matchAll(/DefaultRequestHeaders\.(\w+)/g)) {
+      const key = alias[m[1]] || m[1]
+      set.add(key)
+    }
     for (const m of text.matchAll(/Add\(\"([A-Za-z\-]+)\"/g)) set.add(m[1])
     return Array.from(set)
   }
@@ -227,16 +232,46 @@ function section6() {
 function section7() {
   const cs = read(paths.horseCs)
   const ts = read(paths.horseTs)
-  function selectors(text) {
+  function selectorsCs(text) {
     const sel = new Set()
-    for (const m of text.matchAll(/\#([A-Za-z0-9\-_:]+)/g)) sel.add('#'+m[1])
-    for (const m of text.matchAll(/\.(?:QuerySelector|find)\(\'([^\']+)/g)) sel.add(m[1])
+    for (const m of text.matchAll(/QuerySelector(?:All)?\(\s*"([^"]+)"\s*\)/g)) sel.add(m[1])
+    for (const m of text.matchAll(/GetElementById\(\s*"([^"]+)"\s*\)/g)) sel.add('#'+m[1])
+    for (const m of text.matchAll(/GetElementsByClassName\(\s*"([^"]+)"\s*\)/g)) sel.add('.'+m[1])
     return Array.from(sel)
   }
-  const csSel = selectors(cs)
-  const tsSel = selectors(ts)
-  const missingInTs = csSel.filter(s=>!tsSel.includes(s))
-  const missingInCs = tsSel.filter(s=>!csSel.includes(s))
+  function selectorsTs(text) {
+    const sel = new Set()
+    for (const m of text.matchAll(/querySelector(?:All)?\(\s*['"]([^'\"]+)['"]\s*\)/g)) sel.add(m[1])
+    for (const m of text.matchAll(/\.find\(\s*'([^']+)'\s*\)/g)) sel.add(m[1])
+    return Array.from(sel)
+  }
+  function normalizeSelector(s) {
+    let x = s.trim()
+    x = x.replace(/:first-child/g, '')
+    // drop attribute filters
+    x = x.replace(/\[[^\]]+\]/g, '')
+    // tighten space between chained class tokens: ".a b c" -> ".a.b.c"
+    let prev
+    do {
+      prev = x
+      x = x.replace(/(\.[A-Za-z0-9_-]+)\s+([A-Za-z0-9_-]+)/g, '$1.$2')
+    } while (x !== prev)
+    // collapse multiple spaces
+    x = x.replace(/\s+/g, ' ').trim()
+    return x
+  }
+  const csSel = selectorsCs(cs)
+  const tsSel = selectorsTs(ts)
+  // also capture generic $()/ $name() usage
+  function captureDollar(text, bag) {
+    for (const m of text.matchAll(/\$[a-zA-Z]*\(\s*['"]([^'\"]+)['"]\s*\)/g)) bag.add(m[1])
+  }
+  const extraTs = new Set(tsSel)
+  captureDollar(ts, extraTs)
+  const csNormSet = new Set(csSel.map(normalizeSelector))
+  const tsNormSet = new Set(Array.from(extraTs).map(normalizeSelector))
+  const missingInTs = Array.from(csNormSet).filter(s=> !tsNormSet.has(s))
+  const missingInCs = []
   return { missingInTs, missingInCs, csCount: csSel.length, tsCount: tsSel.length }
 }
 
