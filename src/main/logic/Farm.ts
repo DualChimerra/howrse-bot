@@ -193,7 +193,8 @@ export class Farm {
     }
   }
 
-  async run(global: GlobalSettings, signal: AbortSignal): Promise<void> {
+  async run(global: GlobalSettings, signal: AbortSignal, onProgress?: (kind: 'farm'|'horse'|'status', value: string) => void): Promise<void> {
+    if (onProgress) onProgress('farm', this.name || this.id || 'all')
     // load horses according to account settings
     await this.loadHorses(this.acc.settings, global)
 
@@ -201,19 +202,22 @@ export class Farm {
     const skip = Math.max(0, this.acc.settings.SkipIndex - 1)
     const queue = this.horses.slice(skip)
 
+    const processHorse = async (horse: Horse) => {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (onProgress) onProgress('horse', horse.name || horse.id)
+      await this.horseRun(horse, this.acc.settings, global)
+    }
+
     // iterate with optional parallelism
     const concurrency = global.ParallelHorse ? 5 : 1
-    let running = 0
     let index = 0
     const next = async (): Promise<void> => {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
       if (index >= queue.length) return
       const horse = queue[index++]
-      running++
       try {
-        await this.horseRun(horse, this.acc.settings, global)
+        await processHorse(horse)
       } finally {
-        running--
         await next()
       }
     }
@@ -228,11 +232,13 @@ export class Farm {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         const b = babiesQueue.shift()
         if (!b) return
+        if (onProgress) onProgress('horse', b.name || b.id)
         await this.horseRun(b, this.acc.settings, global)
         await runBaby()
       }
       const workers = Array.from({ length: Math.min(5, babiesQueue.length) }, () => runBaby())
       await Promise.all(workers)
     }
+    if (onProgress) onProgress('status', 'done')
   }
 }

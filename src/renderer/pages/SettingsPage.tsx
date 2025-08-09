@@ -4,8 +4,21 @@ import { useTranslation } from 'react-i18next'
 export default function SettingsPage() {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<any>({})
+  const [scope, setScope] = useState<'global'|'single'>('global')
 
-  useEffect(() => { (async () => { const s = await window.api.state.get(); setSettings((s.globalSettings||{}).Settings || {}) })() }, [])
+  useEffect(() => { (async () => {
+    const s = await window.api.state.get();
+    const wt = s.globalSettings?.WorkType ?? 0
+    const selectedIdx = s.selected ?? -1
+    const useSingle = (wt === 0 || wt === 2) && selectedIdx >= 0
+    setScope(useSingle ? 'single' : 'global')
+    if (useSingle) {
+      const acc = s.accounts[selectedIdx]
+      setSettings(acc?.PrivateSettings || acc?.Settings || {})
+    } else {
+      setSettings((s.globalSettings||{}).Settings || {})
+    }
+  })() }, [])
 
   const upd = (patch: any) => setSettings((s: any) => ({ ...s, ...patch }))
 
@@ -117,7 +130,10 @@ export default function SettingsPage() {
           </div>
         </div>
         <div className="flex gap-3 mt-4">
-          <button onClick={()=> window.api.settings.apply(settings, 'global')}>{t('SettingsPageSaveBtn')}</button>
+          <button onClick={async ()=> { await window.api.settings.apply(settings, scope); window.location.assign('/') }}>{t('SettingsPageAcceptBtn')}</button>
+          <button onClick={async ()=> { await window.api.settings.saveToFile(settings) }}>{t('SettingsPageSaveBtn')}</button>
+          <button onClick={async ()=> { const gs = await window.api.settings.loadFromFile(); const s = (gs?.Settings)||{}; setSettings(s) }}>{t('SettingsPageLoadBtn')}</button>
+          <button onClick={()=> setSettings({})}>{t('SettingsPageRefreshBtn')}</button>
           <button onClick={()=> window.location.assign('/')}>{t('SettingsPageReturnBtn')}</button>
         </div>
       </section>

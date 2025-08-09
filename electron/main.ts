@@ -1,9 +1,11 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readdirSync, copyFileSync } from 'node:fs'
+import { loadGlobalSettings } from '../src/main/storage/XmlHelper'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let useTray = true
 
 function getPreloadPath() {
   return join(__dirname, '../preload/index.js')
@@ -44,6 +46,10 @@ function ensureUserSettingsFromResources() {
 
 async function createWindow() {
   ensureUserSettingsFromResources()
+  try {
+    const gs: any = await loadGlobalSettings()
+    if (typeof gs?.Tray === 'boolean') useTray = gs.Tray
+  } catch {}
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -56,6 +62,13 @@ async function createWindow() {
       sandbox: true,
       preload: getPreloadPath(),
     },
+  })
+
+  mainWindow.on('close', (e) => {
+    if (useTray && process.platform === 'darwin') {
+      e.preventDefault()
+      mainWindow?.hide()
+    }
   })
 
   const url = getRendererEntry()
@@ -73,7 +86,7 @@ function setupTray() {
     const menu = Menu.buildFromTemplate([
       { label: 'Show/Hide', click: () => { if (!mainWindow) return; mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show() } },
       { type: 'separator' },
-      { label: 'Quit', click: () => app.quit() },
+      { label: 'Quit', click: () => { useTray = false; app.quit() } },
     ])
     tray.setToolTip('Howrse Bot')
     tray.setContextMenu(menu)

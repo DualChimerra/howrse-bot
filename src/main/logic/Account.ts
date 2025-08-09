@@ -22,9 +22,9 @@ export class AccountLogic {
     this.settings = settings
   }
 
-  initClient(factory: (type: 'new'|'old', baseUrl: string, proxy?: string) => IClient, clientType: ClientType, proxy?: string) {
+  async initClient(factory: (type: 'new'|'old', baseAddress: string, proxy?: string) => Promise<IClient>, clientType: ClientType, proxy?: string) {
     const baseUrl = serverBaseUrls[this.server]
-    this.client = factory(clientType === ClientType.New ? 'new' : 'old', baseUrl, proxy)
+    this.client = await factory(clientType === ClientType.New ? 'new' : 'old', baseUrl, proxy)
   }
 
   initProducts() {

@@ -12,4 +12,16 @@ i18n
     interpolation: { escapeValue: false }
   })
 
+// Sync language with persisted GlobalSettings.Localization
+;(async () => {
+  try {
+    // @ts-expect-error preload bridge
+    const state = await window.api?.state?.get?.()
+    if (state && typeof state.globalSettings?.Localization === 'number') {
+      const lng = state.globalSettings.Localization === 0 ? 'ru' : 'en'
+      i18n.changeLanguage(lng)
+    }
+  } catch {}
+})()
+
 export default i18n

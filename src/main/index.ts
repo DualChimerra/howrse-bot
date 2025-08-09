@@ -6,6 +6,7 @@ import { serverBaseUrls } from '@common/converters'
 import type { Account, GlobalSettings, Settings } from '@common/types'
 import { ProductType, WorkType, ClientType, Server } from '@common/enums'
 import { Farm } from './logic/Farm'
+import { Scheduler } from './logic/Scheduler'
 
 // In-memory state reflecting WPF MainViewModel
 const state = {
@@ -19,6 +20,8 @@ const state = {
   doneCount: 0,
   globalIsRunning: false,
 }
+
+const controllers = new Map<number, AbortController>()
 
 function getSelectedAccount(): Account | null {
   if (state.selectedAccountIndex < 0) return null
@@ -76,7 +79,10 @@ ipcMain.handle('accounts:removeSelected', async () => {
   return true
 })
 
-ipcMain.handle('accounts:saveAll', async () => { await saveAccounts(state.accounts); return true })
+ipcMain.handle('accounts:saveAll', async (_e, maybeArr?: Account[]) => {
+  if (Array.isArray(maybeArr)) state.accounts = maybeArr
+  await saveAccounts(state.accounts); return true
+})
 ipcMain.handle('accounts:loadAll', async () => { state.accounts = await loadAccounts() as Account[]; return state.accounts })
 
 // Save only selected sharing account into Accounts.xml if not exists (WPF SaveCoAccountToFile)
@@ -109,18 +115,26 @@ ipcMain.handle('settings:apply', async (_e, settings: Settings, scope: 'global'|
 ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => { await saveGlobalSettings({ ...(state.globalSettings||{}), Settings: settings } as any); return true })
 ipcMain.handle('settings:loadFromFile', async () => loadGlobalSettings())
 
+ipcMain.handle('globals:update', async (_e, patch: Partial<GlobalSettings>) => {
+  if (!state.globalSettings) state.globalSettings = {} as any
+  state.globalSettings = { ...state.globalSettings, ...patch }
+  await saveGlobalSettings(state.globalSettings)
+  notifyAll('status:update', { globalSettings: state.globalSettings })
+  return state.globalSettings
+})
+
 // Login
-function toLogic(acc: Account): AccountLogic {
+async function toLogic(acc: Account): Promise<AccountLogic> {
   const logic = new AccountLogic(acc.Login, acc.Password, acc.Server, (acc.Settings || acc.PrivateSettings) as Settings)
   const proxy = acc.ProxyIP ? `http://${acc.ProxyLogin && acc.ProxyPassword ? `${acc.ProxyLogin}:${acc.ProxyPassword}@` : ''}${acc.ProxyIP}` : undefined
-  logic.initClient(getClientFactory(), (state.globalSettings?.ClientType ?? ClientType.New) as any, proxy)
+  await logic.initClient(getClientFactory(), (state.globalSettings?.ClientType ?? ClientType.New) as any, proxy)
   logic.initProducts()
   return logic
 }
 
 ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const ok = await logic.loginNormal(load)
   if (ok) {
     acc.Equ = logic.equ
@@ -132,7 +146,7 @@ ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
 
 ipcMain.handle('login:co', async (_e, idx: number, loginCo: string, load: boolean) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const ok = await logic.loginCo(loginCo, load)
   if (ok) {
     acc.LoginCo = loginCo
@@ -143,7 +157,7 @@ ipcMain.handle('login:co', async (_e, idx: number, loginCo: string, load: boolea
 
 ipcMain.handle('login:listCo', async (_e, idx: number) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const html = await logic.client.get('/member/account/?type=sharing')
   const { parseDocument } = await import('./logic/Parser')
   const $ = parseDocument(html)
@@ -158,7 +172,7 @@ ipcMain.handle('login:listCo', async (_e, idx: number) => {
 
 ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   try {
     await logic.client.get('/site/doLogout')
     acc.LoginCo = ''
@@ -169,7 +183,7 @@ ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
 
 ipcMain.handle('farms:load', async (_e, idx: number) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const html = await logic.client.get('/elevage/chevaux/?elevage=all-horses')
   const { parseDocument } = await import('./logic/Parser')
   const $ = parseDocument(html)
@@ -209,7 +223,7 @@ ipcMain.handle('farms:clearQueue', async (_e, idx: number) => {
 
 ipcMain.handle('products:buy', async (_e, idx: number, type: ProductType, quantity: string) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   await logic.loginNormal(false).catch(()=>{})
   const prod = logic.getProductByType(type)
   if (!prod) return false
@@ -223,7 +237,7 @@ ipcMain.handle('products:buy', async (_e, idx: number, type: ProductType, quanti
 
 ipcMain.handle('products:sell', async (_e, idx: number, type: ProductType, quantity: string) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   await logic.loginNormal(false).catch(()=>{})
   const prod = logic.getProductByType(type)
   if (!prod) return false
@@ -238,24 +252,39 @@ ipcMain.handle('products:sell', async (_e, idx: number, type: ProductType, quant
 ipcMain.handle('work:startSingle', async (e, idx: number) => {
   const win = BrowserWindow.fromWebContents(e.sender)
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const farms = (acc.FarmsQueue || []).map(fid => new Farm('', fid, logic))
   if (farms.length === 0) farms.push(new Farm('all', '', logic))
+
+  const controller = new AbortController()
+  controllers.set(idx, controller)
 
   state.runningCount++
   notify(win, 'status:update', { runningCount: state.runningCount })
 
-  const controller = new AbortController()
+  const scheduler = new Scheduler()
   try {
-    for (const farm of farms) {
-      await farm.run(state.globalSettings!, controller.signal)
-    }
+    const tasks = farms.map((farm) => async (signal?: AbortSignal) => {
+      await farm.run(state.globalSettings!, signal || controller.signal, (kind, value) => {
+        notify(win, 'status:update', { accountIndex: idx, kind, value })
+      })
+    })
+    const mode = state.globalSettings?.WorkType ?? WorkType.SingleOrder
+    const concurrency = mode === WorkType.SingleParallel ? 5 : 1
+    await scheduler.run(tasks, mode, {
+      concurrency,
+      randomPause: !!state.globalSettings?.RandomPause,
+      minPauseMs: 50,
+      maxPauseMs: 100,
+      signal: controller.signal,
+    })
     state.doneCount++
     notify(win, 'status:update', { doneCount: state.doneCount })
   } catch (err) {
     state.notifications.push(`Error: ${String(err)}`)
     notify(win, 'notify', { text: state.notifications[state.notifications.length - 1] })
   } finally {
+    controllers.delete(idx)
     state.runningCount = Math.max(0, state.runningCount - 1)
     notify(win, 'status:update', { runningCount: state.runningCount })
   }
@@ -263,15 +292,61 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
 })
 
 ipcMain.handle('work:startAll', async (e) => {
-  const tasks = state.accounts.map((_, i) => ipcMain.emit('work:startSingle' as any, e, i))
+  state.globalIsRunning = true
+  const win = BrowserWindow.fromWebContents(e.sender)
+  const scheduler = new Scheduler()
+  try {
+    const indices = state.accounts.map((_, i) => i)
+    const tasks = indices.map((i) => async (signal?: AbortSignal) => {
+      if (!state.globalIsRunning) return
+      const acc = state.accounts[i]
+      const logic = await toLogic(acc)
+      const farms = (acc.FarmsQueue || []).map(fid => new Farm('', fid, logic))
+      if (farms.length === 0) farms.push(new Farm('all', '', logic))
+      const controller = new AbortController()
+      controllers.set(i, controller)
+      state.runningCount++
+      notify(win, 'status:update', { runningCount: state.runningCount })
+      try {
+        const farmTasks = farms.map((farm) => async (sig?: AbortSignal) => farm.run(state.globalSettings!, sig || controller.signal, (kind, value) => {
+          notify(win, 'status:update', { accountIndex: i, kind, value })
+        }))
+        const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
+        const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
+        await scheduler.run(farmTasks, mode, {
+          concurrency,
+          randomPause: !!state.globalSettings?.RandomPause,
+          minPauseMs: 50,
+          maxPauseMs: 100,
+          signal: controller.signal,
+        })
+        state.doneCount++
+        notify(win, 'status:update', { doneCount: state.doneCount })
+      } finally {
+        controllers.delete(i)
+        state.runningCount = Math.max(0, state.runningCount - 1)
+        notify(win, 'status:update', { runningCount: state.runningCount })
+      }
+    })
+    const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
+    const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
+    await scheduler.run(tasks, mode, { concurrency })
+  } finally {
+    state.globalIsRunning = false
+  }
   return true
 })
 
-ipcMain.handle('work:stopSingle', async () => {
+ipcMain.handle('work:stopSingle', async (_e, idx: number) => {
+  const c = controllers.get(idx)
+  if (c) c.abort()
+  controllers.delete(idx)
   return true
 })
 
 ipcMain.handle('work:stopAll', async () => {
   state.globalIsRunning = false
+  for (const c of controllers.values()) c.abort()
+  controllers.clear()
   return true
 })

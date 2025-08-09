@@ -1,8 +1,16 @@
 import React from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
+import i18n from './i18n'
 
 export default function App() {
   const { pathname } = useLocation()
+  const toggleLang = async () => {
+    const state = await window.api.state.get()
+    const current = state.globalSettings?.Localization ?? 0
+    const next = current === 0 ? 1 : 0
+    await window.api.globals.update({ Localization: next })
+    i18n.changeLanguage(next === 0 ? 'ru' : 'en')
+  }
   return (
     <div className="h-full flex flex-col">
       <div className="h-10 flex items-center justify-between px-2 select-none bg-[#202225]" style={{ WebkitAppRegion: 'drag' }}>
@@ -13,6 +21,9 @@ export default function App() {
           </button>
           <button className="px-1 py-0.5 text-xs" onClick={()=> window.location.assign('/settings')}>
             ⚙
+          </button>
+          <button className="px-1 py-0.5 text-xs" onClick={toggleLang}>
+            🌐
           </button>
         </div>
         <div className="text-sm text-white">Bot Qually</div>

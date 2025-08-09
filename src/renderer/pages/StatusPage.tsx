@@ -15,6 +15,17 @@ export default function StatusPage() {
     window.api.events.onStatusUpdate((p) => {
       if (typeof p.runningCount !== 'undefined') setRunningCount(p.runningCount)
       if (typeof p.doneCount !== 'undefined') setDoneCount(p.doneCount)
+      if (typeof p.accountIndex === 'number' && p.kind && typeof p.value === 'string') {
+        setAccounts(prev => {
+          const next = prev.slice()
+          const acc = { ...(next[p.accountIndex] || {}) }
+          if (p.kind === 'farm') acc.ProgressFarm = p.value
+          else if (p.kind === 'horse') acc.ProgressHorse = p.value
+          else if (p.kind === 'status') acc.Progress = p.value
+          next[p.accountIndex] = acc
+          return next
+        })
+      }
     })
   }, [])
 

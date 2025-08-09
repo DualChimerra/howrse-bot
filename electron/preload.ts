@@ -49,7 +49,7 @@ const api = {
   },
   // storage direct (for saved accounts XML)
   storage: {
-    loadAccounts: () => ipcRenderer.invoke('state:get').then((s: any) => s.accounts || []),
+    loadAccounts: () => ipcRenderer.invoke('accounts:loadAll'),
     saveAccounts: (arr: any[]) => ipcRenderer.invoke('accounts:saveAll', arr),
   },
   // work
@@ -58,6 +58,10 @@ const api = {
     startAll: () => ipcRenderer.invoke('work:startAll'),
     stopSingle: (idx: number) => ipcRenderer.invoke('work:stopSingle', idx),
     stopAll: () => ipcRenderer.invoke('work:stopAll'),
+  },
+  // globals
+  globals: {
+    update: (patch: any) => ipcRenderer.invoke('globals:update', patch),
   },
   // events
   events: {
