@@ -4,6 +4,7 @@ import type { CheerioAPI } from 'cheerio'
 import { HorseSex, ProductType } from '@common/enums'
 import type { Settings } from '@common/types'
 import { AccountLogic } from './Account'
+import type { GlobalSettings } from '@common/types'
 
 function randInt(minInclusive: number, maxExclusive: number): number {
   return Math.floor(Math.random() * (maxExclusive - minInclusive)) + minInclusive
@@ -439,5 +440,53 @@ export class Horse {
     } else {
       return true
     }
+  }
+
+  private async loadHorsesFromFarmPage(farmId: string, settings: Settings, global: GlobalSettings): Promise<Horse[]> {
+    const url = farmId ? `/elevage/chevaux/` : `/elevage/chevaux/meschevaux`
+    const res = await this.acc.client.get(url)
+    const doc = parseDocument(await res.text())
+    const $ = (await import('cheerio')).load(doc as any)
+
+    const horses: Horse[] = []
+    // broaden selectors: support both legacy list and grid tiles
+    $('.horses-list .horse, .horses-list .cheval, .liste-chevaux .cheval, .horsesList .horse, .card-horse, .cheval-card').each((_i, el) => {
+      const name = $(el).find('.horse-name, .nom, .name, .titre a, .title a').first().text().trim()
+      const link = $(el).find('a').attr('href') || ''
+      const idMatch = link.match(/\bid=(\d+)/)
+      const id = idMatch ? idMatch[1] : undefined
+      if (!id) return
+      horses.push(new Horse(id, name))
+    })
+
+    // pagination: detect next page links, enqueue more if present
+    const nextHref = $('a[href*="meschevaux"][rel="next"], .pagination a:contains("»"), .suivant a, a.next').attr('href')
+    if (nextHref) {
+      const more = await this.loadHorsesFromFarmPageContinuation(nextHref)
+      for (const h of more) horses.push(h)
+    }
+
+    return horses
+  }
+
+  private async loadHorsesFromFarmPageContinuation(href: string): Promise<Horse[]> {
+    const res = await this.acc.client.get(href)
+    const doc = parseDocument(await res.text())
+    const $ = (await import('cheerio')).load(doc as any)
+    const horses: Horse[] = []
+    $('.horses-list .horse, .horses-list .cheval, .liste-chevaux .cheval, .horsesList .horse, .card-horse, .cheval-card').each((_i, el) => {
+      const name = $(el).find('.horse-name, .nom, .name, .titre a, .title a').first().text().trim()
+      const link = $(el).find('a').attr('href') || ''
+      const idMatch = link.match(/\bid=(\d+)/)
+      const id = idMatch ? idMatch[1] : undefined
+      if (!id) return
+      horses.push(new Horse(id, name))
+    })
+    const nextHref = $('a[href*="meschevaux"][rel="next"], .pagination a:contains("»"), .suivant a, a.next').attr('href')
+    if (nextHref) {
+      const more = await this.loadHorsesFromFarmPageContinuation(nextHref)
+      for (const h of more) horses.push(h)
+    }
+    return horses
   }
 }

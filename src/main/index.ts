@@ -1,5 +1,5 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
-import { loadAccounts, saveAccounts, loadGlobalSettings, saveGlobalSettings, getSettingsPaths } from './storage/XmlHelper'
+import { ipcMain, BrowserWindow, app, dialog } from 'electron'
+import { loadAccounts, saveAccounts, loadGlobalSettings, saveGlobalSettings, getSettingsPaths, saveAccountsToPath, loadAccountsFromPath, saveSettingsToPath, loadSettingsFromPath } from './storage/XmlHelper'
 import { getClientFactory } from './http/IClient'
 import { AccountLogic } from './logic/Account'
 import { serverBaseUrls } from '@common/converters'
@@ -114,7 +114,26 @@ ipcMain.handle('accounts:saveAll', async (_e, maybeArr?: Account[]) => {
   if (Array.isArray(maybeArr)) state.accounts = maybeArr
   await saveAccounts(state.accounts); return true
 })
+
 ipcMain.handle('accounts:loadAll', async () => { state.accounts = await loadAccounts() as Account[]; return state.accounts })
+
+ipcMain.handle('accounts:saveToFile', async () => {
+  const { accPath } = getSettingsPaths()
+  const result = await dialog.showSaveDialog({ title: 'Save Accounts', defaultPath: accPath, filters: [{ name: 'XML', extensions: ['xml'] }] })
+  if (result.canceled || !result.filePath) return false
+  await saveAccountsToPath(state.accounts, result.filePath)
+  return true
+})
+
+ipcMain.handle('accounts:loadFromFile', async () => {
+  const { accPath } = getSettingsPaths()
+  const result = await dialog.showOpenDialog({ title: 'Load Accounts', defaultPath: accPath, filters: [{ name: 'XML', extensions: ['xml'] }], properties: ['openFile'] })
+  if (result.canceled || !result.filePaths?.[0]) return []
+  const arr = await loadAccountsFromPath(result.filePaths[0]) as Account[]
+  state.accounts = arr
+  await saveAccounts(state.accounts)
+  return state.accounts
+})
 
 // Save only selected sharing account into Accounts.xml if not exists (WPF SaveCoAccountToFile)
 ipcMain.handle('accounts:saveCoSelected', async () => {
@@ -143,8 +162,21 @@ ipcMain.handle('settings:apply', async (_e, settings: Settings, scope: 'global'|
   return true
 })
 
-ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => { await saveGlobalSettings({ ...(state.globalSettings||{}), Settings: settings } as any); return true })
-ipcMain.handle('settings:loadFromFile', async () => loadGlobalSettings())
+ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => {
+  const { globalPath } = getSettingsPaths()
+  const result = await dialog.showSaveDialog({ title: 'Save Settings', defaultPath: globalPath, filters: [{ name: 'XML', extensions: ['xml'] }] })
+  if (result.canceled || !result.filePath) return false
+  const data = { ...(state.globalSettings||{}), Settings: settings } as any
+  await saveSettingsToPath(data, result.filePath)
+  return true
+})
+ipcMain.handle('settings:loadFromFile', async () => {
+  const { globalPath } = getSettingsPaths()
+  const result = await dialog.showOpenDialog({ title: 'Load Settings', defaultPath: globalPath, filters: [{ name: 'XML', extensions: ['xml'] }], properties: ['openFile'] })
+  if (result.canceled || !result.filePaths?.[0]) return {}
+  const obj = await loadSettingsFromPath(result.filePaths[0])
+  return obj
+})
 
 ipcMain.handle('globals:update', async (_e, patch: Partial<GlobalSettings>) => {
   if (!state.globalSettings) state.globalSettings = {} as any
@@ -298,7 +330,8 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
   try {
     const tasks = farms.map((farm) => async (signal?: AbortSignal) => {
       await farm.run(state.globalSettings!, signal || controller.signal, (kind, value) => {
-        notify(win, 'status:update', { accountIndex: idx, kind, value })
+        if (kind === 'notify') notify(win, 'notify', { text: value })
+        else notify(win, 'status:update', { accountIndex: idx, kind, value })
       })
     })
     const mode = state.globalSettings?.WorkType ?? WorkType.SingleOrder
@@ -349,7 +382,8 @@ ipcMain.handle('work:startAll', async (e) => {
       notify(win, 'status:update', { runningCount: state.runningCount })
       try {
         const farmTasks = farms.map((farm) => async (sig?: AbortSignal) => farm.run(state.globalSettings!, sig || controller.signal, (kind, value) => {
-          notify(win, 'status:update', { accountIndex: i, kind, value })
+          if (kind === 'notify') notify(win, 'notify', { text: value })
+          else notify(win, 'status:update', { accountIndex: i, kind, value })
         }))
         const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
         const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
@@ -375,6 +409,7 @@ ipcMain.handle('work:startAll', async (e) => {
     await scheduler.run(tasks, mode, { concurrency })
   } finally {
     state.globalIsRunning = false
+    notifyAll('notify', { key: 'MainNotificationEndWorkMessage' })
   }
   return true
 })

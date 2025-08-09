@@ -11,6 +11,8 @@ export default function MainPage() {
   const [status, setStatus] = useState('')
   const [version, setVersion] = useState('')
   const [farms, setFarms] = useState<{ Name: string; Id: string }[]>([])
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => { const onToggle = () => setMenuOpen(v => !v); window.addEventListener('toggle-menu', onToggle); return () => window.removeEventListener('toggle-menu', onToggle) }, [])
   const selected = selectedIdx >= 0 ? accounts[selectedIdx] : null
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function MainPage() {
   return (
     <div className="grid grid-rows-[auto_1fr_auto] h-full">
       <div className="grid grid-cols-4 gap-4">
-        <aside className="bg-card p-3 rounded-xl w-64">
+        <aside className={`bg-card p-3 rounded-xl w-64 transition-all ${menuOpen ? 'opacity-100' : 'opacity-80'}`}>
           <div className="space-y-2">
             <label className="flex items-center gap-2"><input type="checkbox" checked={!!globals.RandomPause} onChange={e=>onChangeGlobal({ RandomPause: e.target.checked })}/> {t('MainMenuRandomPausesChk')}</label>
             <hr />
@@ -124,8 +126,8 @@ export default function MainPage() {
           <button onClick={()=>{ window.api.accounts.saveCoSelected() }}>{t('MainPageSaveCoBtn')}</button>
           <button onClick={()=> window.location.assign('/settings')}>{t('MainPageSettingsBtn')}</button>
           <button onClick={()=> window.location.assign('/management')}>{t('MainPageAccManagmentBtn')}</button>
-          <button onClick={()=> window.api.accounts.saveAll()}>{t('MainPageSaveAccListBtn')}</button>
-          <button onClick={async ()=>{ const accs = await window.api.accounts.loadAll(); setAccounts(accs) }}>{t('MainPageLoadAccListBtn')}</button>
+          <button onClick={()=> window.api.accounts.saveToFile()}>{t('MainPageSaveAccListBtn')}</button>
+          <button onClick={async ()=>{ const accs = await window.api.accounts.loadFromFile(); setAccounts(accs) }}>{t('MainPageLoadAccListBtn')}</button>
           <button onClick={()=> window.location.assign('/status')}>{t('MainPageOpenStatusBtn')}</button>
         </div>
 

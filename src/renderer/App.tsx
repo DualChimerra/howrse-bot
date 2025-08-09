@@ -22,7 +22,7 @@ export default function App() {
       <div className="h-10 flex items-center justify-between px-2 select-none bg-[#202225]" style={{ WebkitAppRegion: 'drag' }}>
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
           {logo ? <img src={logo} alt="logo" className="w-5 h-5 rounded-sm" /> : <div className="w-5 h-5 bg-white/10 rounded-sm" />}
-          <button className="px-1 py-0.5 text-xs" onClick={()=>{ /* open side menu already in page */ }}>
+          <button className="px-1 py-0.5 text-xs" onClick={()=>{ const ev = new Event('toggle-menu'); window.dispatchEvent(ev) }}>
             ☰
           </button>
           <button className="px-1 py-0.5 text-xs" onClick={()=> window.location.assign('/settings')}>

@@ -19,6 +19,8 @@ const api = {
     removeSelected: () => ipcRenderer.invoke('accounts:removeSelected'),
     saveAll: () => ipcRenderer.invoke('accounts:saveAll'),
     loadAll: () => ipcRenderer.invoke('accounts:loadAll'),
+    saveToFile: () => ipcRenderer.invoke('accounts:saveToFile'),
+    loadFromFile: () => ipcRenderer.invoke('accounts:loadFromFile'),
     saveCoSelected: () => ipcRenderer.invoke('accounts:saveCoSelected'),
   },
   // login

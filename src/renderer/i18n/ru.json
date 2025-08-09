@@ -90,6 +90,7 @@
   "MainStartAllErrorMessage1": "Во время прогона",
   "MainStartAllErrorMessage2": "произошла ошибка! Завод",
   "MainStartAllErrorMessage3": "Все необходимые данные были записаны. Не забудьте отправить отчет.",
+  "MainStartAllErrorMessage": "У вас включен режим прогона по очереди! Действия по этой кнопке производиться не будут!",
   "StatusPageAccountText": "Аккаунт",
   "StatusPageDoneAccsText": "Кол-во оконченных аккаунтов",
   "StatusPageEquText": "Экю",
@@ -117,5 +118,9 @@
   "MainPageQueueList": "Очередь",
   "MainPageClearQueueBtn": "Очистить",
   "MainPageAllFarms": "Все заводы",
-  "MainPageRemoveBtn": "Убрать"
+  "MainPageRemoveBtn": "Убрать",
+  "ManagmentPageStraw": "Солома",
+  "ManagmentPageWheat": "Пшеница",
+  "ManagmentPageWood": "Дерево",
+  "ManagmentPageOR": "ОР"
 }

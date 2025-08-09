@@ -66,3 +66,37 @@ export async function saveGlobalSettings(settings: unknown): Promise<boolean> {
   writeFileSync(globalPath, xml, 'utf8')
   return true
 }
+
+export async function loadAccountsFromPath(path: string): Promise<unknown[]> {
+  if (!existsSync(path)) return []
+  const xml = readFileSync(path, 'utf8')
+  const obj = await parseStringPromise(xml, { explicitArray: false })
+  const arr = obj?.ArrayOfAccount?.Account
+  if (!arr) return []
+  return Array.isArray(arr) ? arr : [arr]
+}
+
+export async function saveAccountsToPath(accounts: unknown[], path: string): Promise<boolean> {
+  const dir = path.substring(0, path.lastIndexOf('/'))
+  if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const builder = new Builder({ headless: true, rootName: 'ArrayOfAccount', renderOpts: { pretty: true } })
+  const xml = builder.buildObject({ Account: accounts })
+  writeFileSync(path, xml, 'utf8')
+  return true
+}
+
+export async function loadSettingsFromPath(path: string): Promise<unknown> {
+  if (!existsSync(path)) return {}
+  const xml = readFileSync(path, 'utf8')
+  const obj = await parseStringPromise(xml, { explicitArray: false })
+  return obj?.GlobalSettings ?? {}
+}
+
+export async function saveSettingsToPath(settings: unknown, path: string): Promise<boolean> {
+  const dir = path.substring(0, path.lastIndexOf('/'))
+  if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const builder = new Builder({ headless: true, rootName: 'GlobalSettings', renderOpts: { pretty: true } })
+  const xml = builder.buildObject(settings)
+  writeFileSync(path, xml, 'utf8')
+  return true
+}
