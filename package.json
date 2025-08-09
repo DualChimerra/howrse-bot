@@ -13,7 +13,8 @@
     "build": "electron-vite build && electron-builder --mac --x64 --arm64",
     "start": "electron-vite preview",
     "test:run-account": "node --loader ts-node/esm scripts/run-account.ts",
-    "test:login": "node --loader ts-node/esm scripts/run-login.ts"
+    "test:login": "node --loader ts-node/esm scripts/run-login.ts",
+    "test:myother": "node --loader ts-node/esm scripts/run-my-other.ts"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
