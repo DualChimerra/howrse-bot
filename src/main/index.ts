@@ -1,5 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron'
-import { loadAccounts, saveAccounts, loadGlobalSettings, saveGlobalSettings } from './storage/XmlHelper'
+import { ipcMain, BrowserWindow, app } from 'electron'
+import { loadAccounts, saveAccounts, loadGlobalSettings, saveGlobalSettings, getSettingsPaths } from './storage/XmlHelper'
 import { getClientFactory } from './http/IClient'
 import { AccountLogic } from './logic/Account'
 import { serverBaseUrls } from '@common/converters'
@@ -30,13 +30,10 @@ function notify(win: BrowserWindow | null, channel: string, payload: any) {
   win.webContents.send(channel, payload)
 }
 
-// Helpers mapping Account (DTO) -> AccountLogic (runtime)
-function toLogic(acc: Account): AccountLogic {
-  const logic = new AccountLogic(acc.Login, acc.Password, acc.Server, acc.Settings!)
-  const proxy = acc.ProxyIP ? `http://${acc.ProxyLogin && acc.ProxyPassword ? `${acc.ProxyLogin}:${acc.ProxyPassword}@` : ''}${acc.ProxyIP}` : undefined
-  logic.initClient(getClientFactory(), acc.Settings ? (state.globalSettings?.ClientType ?? ClientType.New) : ClientType.New, proxy)
-  logic.initProducts()
-  return logic
+function notifyAll(channel: string, payload: any) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send(channel, payload)
+  }
 }
 
 // IPC: window controls
@@ -48,7 +45,7 @@ ipcMain.handle('window:close', (e) => { const w = BrowserWindow.fromWebContents(
 ipcMain.handle('state:init', async () => {
   const [accs, globals] = await Promise.all([loadAccounts(), loadGlobalSettings()])
   state.accounts = (accs as Account[])
-  state.globalSettings = globals as GlobalSettings
+  state.globalSettings = (globals as GlobalSettings) || { Sort: 'age', WorkType: WorkType.SingleOrder, ClientType: ClientType.New, ParallelHorse: false, RandomPause: false, Tray: true, MoneyNotification: false, Localization: 0, Settings: {} as any }
   state.selectedAccountIndex = state.accounts.length > 0 ? 0 : -1
   return { accounts: state.accounts, globalSettings: state.globalSettings, selected: state.selectedAccountIndex }
 })
@@ -109,9 +106,17 @@ ipcMain.handle('settings:apply', async (_e, settings: Settings, scope: 'global'|
   return true
 })
 
-// Save/Load settings to file like WPF
 ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => { await saveGlobalSettings({ ...(state.globalSettings||{}), Settings: settings } as any); return true })
 ipcMain.handle('settings:loadFromFile', async () => loadGlobalSettings())
+
+// Login
+function toLogic(acc: Account): AccountLogic {
+  const logic = new AccountLogic(acc.Login, acc.Password, acc.Server, (acc.Settings || acc.PrivateSettings) as Settings)
+  const proxy = acc.ProxyIP ? `http://${acc.ProxyLogin && acc.ProxyPassword ? `${acc.ProxyLogin}:${acc.ProxyPassword}@` : ''}${acc.ProxyIP}` : undefined
+  logic.initClient(getClientFactory(), (state.globalSettings?.ClientType ?? ClientType.New) as any, proxy)
+  logic.initProducts()
+  return logic
+}
 
 ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
   const acc = state.accounts[idx]
@@ -165,7 +170,6 @@ ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
 ipcMain.handle('farms:load', async (_e, idx: number) => {
   const acc = state.accounts[idx]
   const logic = toLogic(acc)
-  // list of farms mirrors C# Account.LoadFarms
   const html = await logic.client.get('/elevage/chevaux/?elevage=all-horses')
   const { parseDocument } = await import('./logic/Parser')
   const $ = parseDocument(html)
@@ -212,7 +216,7 @@ ipcMain.handle('products:buy', async (_e, idx: number, type: ProductType, quanti
   await logic.buy(prod, quantity)
   await logic.loadProducts()
   acc.Equ = logic.equ
-  acc[ProductType[type] as keyof Account] = { ...(acc as any)[ProductType[type]], Amount: (prod as any).amount } as any
+  ;(acc as any)[ProductType[type]] = { ...(acc as any)[ProductType[type]], Amount: (prod as any).amount }
   await saveAccounts(state.accounts)
   return true
 })
@@ -226,7 +230,7 @@ ipcMain.handle('products:sell', async (_e, idx: number, type: ProductType, quant
   await logic.sell(prod, quantity)
   await logic.loadProducts()
   acc.Equ = logic.equ
-  acc[ProductType[type] as keyof Account] = { ...(acc as any)[ProductType[type]], Amount: (prod as any).amount } as any
+  ;(acc as any)[ProductType[type]] = { ...(acc as any)[ProductType[type]], Amount: (prod as any).amount }
   await saveAccounts(state.accounts)
   return true
 })
@@ -235,7 +239,6 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
   const win = BrowserWindow.fromWebContents(e.sender)
   const acc = state.accounts[idx]
   const logic = toLogic(acc)
-  // Build farms from queued IDs
   const farms = (acc.FarmsQueue || []).map(fid => new Farm('', fid, logic))
   if (farms.length === 0) farms.push(new Farm('all', '', logic))
 
@@ -260,14 +263,11 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
 })
 
 ipcMain.handle('work:startAll', async (e) => {
-  const win = BrowserWindow.fromWebContents(e.sender)
   const tasks = state.accounts.map((_, i) => ipcMain.emit('work:startSingle' as any, e, i))
-  // fire-and-forget; counters updated by startSingle handler
   return true
 })
 
 ipcMain.handle('work:stopSingle', async () => {
-  // In this simplified port, individual abort controllers are not retained; prefer stopAll
   return true
 })
 

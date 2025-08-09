@@ -8,7 +8,10 @@ export default defineConfig({
     build: {
       outDir: 'dist/main',
       rollupOptions: {
-        input: resolve(__dirname, 'electron/main.ts')
+        input: [
+          resolve(__dirname, 'electron/main.ts'),
+          resolve(__dirname, 'src/main/index.ts'),
+        ]
       }
     },
     resolve: {

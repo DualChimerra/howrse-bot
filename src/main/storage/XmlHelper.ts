@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, copyFileSync } from 'node:fs'
 import { parseStringPromise, Builder } from 'xml2js'
 
 const settingsDir = join(app.getPath('userData'), 'settings')
@@ -9,8 +9,31 @@ const globalPath = join(settingsDir, 'Settings.xml')
 
 function ensureDir() { if (!existsSync(settingsDir)) mkdirSync(settingsDir, { recursive: true }) }
 
-export async function loadAccounts(): Promise<unknown[]> {
+function migrateIfNeeded() {
   ensureDir()
+  const hasAny = readdirSync(settingsDir).length > 0
+  if (!hasAny) {
+    const devDir = join(process.cwd(), 'settings')
+    if (existsSync(devDir)) {
+      for (const f of readdirSync(devDir)) {
+        copyFileSync(join(devDir, f), join(settingsDir, f))
+      }
+    }
+    const resDir = join(process.resourcesPath, 'settings')
+    if (existsSync(resDir)) {
+      for (const f of readdirSync(resDir)) {
+        copyFileSync(join(resDir, f), join(settingsDir, f))
+      }
+    }
+  }
+}
+
+export function getSettingsPaths() {
+  return { settingsDir, accPath, globalPath }
+}
+
+export async function loadAccounts(): Promise<unknown[]> {
+  migrateIfNeeded()
   if (!existsSync(accPath)) return []
   const xml = readFileSync(accPath, 'utf8')
   const obj = await parseStringPromise(xml, { explicitArray: false })
@@ -29,7 +52,7 @@ export async function saveAccounts(accounts: unknown[]): Promise<boolean> {
 }
 
 export async function loadGlobalSettings(): Promise<unknown> {
-  ensureDir()
+  migrateIfNeeded()
   if (!existsSync(globalPath)) return {}
   const xml = readFileSync(globalPath, 'utf8')
   const obj = await parseStringPromise(xml, { explicitArray: false })
