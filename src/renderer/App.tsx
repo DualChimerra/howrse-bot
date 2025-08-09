@@ -5,8 +5,22 @@ export default function App() {
   const { pathname } = useLocation()
   return (
     <div className="h-full flex flex-col">
-      <div className="h-10 flex items-center px-3 select-none" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="font-semibold">Howrse Bot</div>
+      <div className="h-10 flex items-center justify-between px-2 select-none bg-[#202225]" style={{ WebkitAppRegion: 'drag' }}>
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+          <div className="w-5 h-5 bg-white/10 rounded-sm" />
+          <button className="px-1 py-0.5 text-xs" onClick={()=>{ /* open side menu already in page */ }}>
+            ☰
+          </button>
+          <button className="px-1 py-0.5 text-xs" onClick={()=> window.location.assign('/settings')}>
+            ⚙
+          </button>
+        </div>
+        <div className="text-sm text-white">Bot Qually</div>
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
+          <button className="w-6 h-6 hover:bg-white/10 rounded" onClick={()=>window.api.window.minimize()}>─</button>
+          <button className="w-6 h-6 hover:bg-white/10 rounded" onClick={()=>window.api.window.maximize()}>▢</button>
+          <button className="w-6 h-6 hover:bg-red-600 rounded" onClick={()=>window.api.window.close()}>✕</button>
+        </div>
       </div>
       <div className="flex items-center gap-2 px-3 pb-2 border-b border-gray-700" style={{ WebkitAppRegion: 'no-drag' }}>
         <NavLink to="/">Main</NavLink>

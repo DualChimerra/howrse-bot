@@ -39,6 +39,11 @@ function toLogic(acc: Account): AccountLogic {
   return logic
 }
 
+// IPC: window controls
+ipcMain.handle('window:minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); w?.minimize() })
+ipcMain.handle('window:maximize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (!w) return; if (w.isMaximized()) w.unmaximize(); else w.maximize() })
+ipcMain.handle('window:close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); w?.close() })
+
 // IPC: state management
 ipcMain.handle('state:init', async () => {
   const [accs, globals] = await Promise.all([loadAccounts(), loadGlobalSettings()])
@@ -77,6 +82,17 @@ ipcMain.handle('accounts:removeSelected', async () => {
 ipcMain.handle('accounts:saveAll', async () => { await saveAccounts(state.accounts); return true })
 ipcMain.handle('accounts:loadAll', async () => { state.accounts = await loadAccounts() as Account[]; return state.accounts })
 
+// Save only selected sharing account into Accounts.xml if not exists (WPF SaveCoAccountToFile)
+ipcMain.handle('accounts:saveCoSelected', async () => {
+  const sel = getSelectedAccount(); if (!sel) return false
+  if (sel.Type !== 1 /* AccountType.Co */) return false
+  const current = await loadAccounts() as Account[]
+  const exists = current.some(a => a.Login === sel.Login && a.Server === sel.Server && a.Type === sel.Type && a.LoginCo === sel.LoginCo)
+  if (!exists) current.push(sel)
+  await saveAccounts(current)
+  return true
+})
+
 ipcMain.handle('settings:open', async () => true)
 ipcMain.handle('settings:apply', async (_e, settings: Settings, scope: 'global'|'single') => {
   if (scope === 'global') {
@@ -93,6 +109,10 @@ ipcMain.handle('settings:apply', async (_e, settings: Settings, scope: 'global'|
   return true
 })
 
+// Save/Load settings to file like WPF
+ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => { await saveGlobalSettings({ ...(state.globalSettings||{}), Settings: settings } as any); return true })
+ipcMain.handle('settings:loadFromFile', async () => loadGlobalSettings())
+
 ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
   const acc = state.accounts[idx]
   const logic = toLogic(acc)
@@ -100,6 +120,7 @@ ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
   if (ok) {
     acc.Equ = logic.equ
     acc.Pass = logic.passCount
+    await saveAccounts(state.accounts)
   }
   return ok
 })
@@ -108,7 +129,37 @@ ipcMain.handle('login:co', async (_e, idx: number, loginCo: string, load: boolea
   const acc = state.accounts[idx]
   const logic = toLogic(acc)
   const ok = await logic.loginCo(loginCo, load)
+  if (ok) {
+    acc.LoginCo = loginCo
+    await saveAccounts(state.accounts)
+  }
   return ok
+})
+
+ipcMain.handle('login:listCo', async (_e, idx: number) => {
+  const acc = state.accounts[idx]
+  const logic = toLogic(acc)
+  const html = await logic.client.get('/member/account/?type=sharing')
+  const { parseDocument } = await import('./logic/Parser')
+  const $ = parseDocument(html)
+  const tables = $('.table--striped')
+  const names: string[] = []
+  if (tables.length >= 2) {
+    const els = tables.eq(1).find('.usergroup_2')
+    els.each((_, el) => names.push($(el).text().trim()))
+  }
+  return names
+})
+
+ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
+  const acc = state.accounts[idx]
+  const logic = toLogic(acc)
+  try {
+    await logic.client.get('/site/doLogout')
+    acc.LoginCo = ''
+    await saveAccounts(state.accounts)
+    return true
+  } catch { return false }
 })
 
 ipcMain.handle('farms:load', async (_e, idx: number) => {
@@ -130,13 +181,62 @@ ipcMain.handle('farms:load', async (_e, idx: number) => {
   return farms
 })
 
+ipcMain.handle('farms:addToQueue', async (_e, idx: number, farmId: string) => {
+  const acc = state.accounts[idx]
+  acc.FarmsQueue = acc.FarmsQueue || []
+  if (!acc.FarmsQueue.includes(farmId)) acc.FarmsQueue.push(farmId)
+  await saveAccounts(state.accounts)
+  return true
+})
+
+ipcMain.handle('farms:removeFromQueue', async (_e, idx: number, farmId: string) => {
+  const acc = state.accounts[idx]
+  acc.FarmsQueue = (acc.FarmsQueue || []).filter(id => id !== farmId)
+  await saveAccounts(state.accounts)
+  return true
+})
+
+ipcMain.handle('farms:clearQueue', async (_e, idx: number) => {
+  const acc = state.accounts[idx]
+  acc.FarmsQueue = []
+  await saveAccounts(state.accounts)
+  return true
+})
+
+ipcMain.handle('products:buy', async (_e, idx: number, type: ProductType, quantity: string) => {
+  const acc = state.accounts[idx]
+  const logic = toLogic(acc)
+  await logic.loginNormal(false).catch(()=>{})
+  const prod = logic.getProductByType(type)
+  if (!prod) return false
+  await logic.buy(prod, quantity)
+  await logic.loadProducts()
+  acc.Equ = logic.equ
+  acc[ProductType[type] as keyof Account] = { ...(acc as any)[ProductType[type]], Amount: (prod as any).amount } as any
+  await saveAccounts(state.accounts)
+  return true
+})
+
+ipcMain.handle('products:sell', async (_e, idx: number, type: ProductType, quantity: string) => {
+  const acc = state.accounts[idx]
+  const logic = toLogic(acc)
+  await logic.loginNormal(false).catch(()=>{})
+  const prod = logic.getProductByType(type)
+  if (!prod) return false
+  await logic.sell(prod, quantity)
+  await logic.loadProducts()
+  acc.Equ = logic.equ
+  acc[ProductType[type] as keyof Account] = { ...(acc as any)[ProductType[type]], Amount: (prod as any).amount } as any
+  await saveAccounts(state.accounts)
+  return true
+})
+
 ipcMain.handle('work:startSingle', async (e, idx: number) => {
   const win = BrowserWindow.fromWebContents(e.sender)
   const acc = state.accounts[idx]
   const logic = toLogic(acc)
   // Build farms from queued IDs
   const farms = (acc.FarmsQueue || []).map(fid => new Farm('', fid, logic))
-  // Or if empty, treat as all-horses tab for demonstration
   if (farms.length === 0) farms.push(new Farm('all', '', logic))
 
   state.runningCount++
@@ -150,7 +250,6 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
     state.doneCount++
     notify(win, 'status:update', { doneCount: state.doneCount })
   } catch (err) {
-    // send notification
     state.notifications.push(`Error: ${String(err)}`)
     notify(win, 'notify', { text: state.notifications[state.notifications.length - 1] })
   } finally {
@@ -160,8 +259,19 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
   return true
 })
 
+ipcMain.handle('work:startAll', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  const tasks = state.accounts.map((_, i) => ipcMain.emit('work:startSingle' as any, e, i))
+  // fire-and-forget; counters updated by startSingle handler
+  return true
+})
+
+ipcMain.handle('work:stopSingle', async () => {
+  // In this simplified port, individual abort controllers are not retained; prefer stopAll
+  return true
+})
+
 ipcMain.handle('work:stopAll', async () => {
-  // For simplicity, rely on per-run AbortController stored per request in future
   state.globalIsRunning = false
   return true
 })

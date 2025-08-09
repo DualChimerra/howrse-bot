@@ -67,15 +67,53 @@ export default function SettingsPage() {
             </select>
             <label className="flex items-center gap-2 mt-2"><input type="checkbox" checked={!!settings.CentreHay} onChange={e=>upd({ CentreHay: e.target.checked })}/> {t('SettingsPageWithHayChk')}</label>
             <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.CentreOat} onChange={e=>upd({ CentreOat: e.target.checked })}/> {t('SettingsPageWithOatChk')}</label>
-          </div>
-          <div>
+            <hr className="my-2" />
             <div className="font-semibold">{t('SettingsPageReserveText')}</div>
             <div className="flex items-center gap-2"><span>ID:</span> <input className="w-40" value={settings.ReserveID || ''} onChange={e=>upd({ ReserveID: e.target.value })} /></div>
             <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.SelfReserve} onChange={e=>upd({ SelfReserve: e.target.checked })}/> {t('SettingsPageSelfChk')}</label>
             <select className="w-full" value={settings.ReserveDuration || ''} onChange={e=>upd({ ReserveDuration: e.target.value })}>
               {[1,3,10,30,60].map(v=> <option key={v}>{v}</option>)}
             </select>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.WriteToAll} onChange={e=>upd({ WriteToAll: e.target.checked })}/> {t('SettingsPageWriteToAll')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.WriteToAll} onChange={e=>upd({ WriteToAll: e.target.checked })}/> {t('SettingsPageContinueToAllChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.Continue} onChange={e=>upd({ Continue: e.target.checked })}/> {t('SettingsPageContinueChk')}</label>
+            <select className="w-full" value={settings.ContinueDuration || ''} onChange={e=>upd({ ContinueDuration: e.target.value })}>
+              {[3,10,30,60,100].map(v=> <option key={v}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="font-semibold">{t('SettingsPageBuySellText')}</div>
+            <div>{t('SettingsPageHayQuanText')}</div>
+            <select className="w-full" value={settings.BuyHay || ''} onChange={e=>upd({ BuyHay: e.target.value })}>
+              {['',500,600,700,800,900,1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].map(v=> <option key={v}>{v}</option>)}
+            </select>
+            <div>{t('SettingsPageOatQuanText')}</div>
+            <select className="w-full" value={settings.BuyOat || ''} onChange={e=>upd({ BuyOat: e.target.value })}>
+              {['',500,600,700,800,900,1000,2000,3000,4000,5000,6000,7000,8000,9000,10000].map(v=> <option key={v}>{v}</option>)}
+            </select>
+            <hr className="my-2" />
+            <div>{t('SettingsPageSellMainText')}</div>
+            <select className="w-full" value={settings.MainProductToSell || 0} onChange={e=>upd({ MainProductToSell: Number(e.target.value) })}>
+              {Array.from({length: 15}).map((_,i)=> <option key={i} value={i}>{i}</option>)}
+            </select>
+            <div>{t('SettingsPageSellSubText')}</div>
+            <select className="w-full" value={settings.SubProductToSell || 0} onChange={e=>upd({ SubProductToSell: Number(e.target.value) })}>
+              {Array.from({length: 15}).map((_,i)=> <option key={i} value={i}>{i}</option>)}
+            </select>
+            <label className="flex items-center gap-2 mt-2"><input type="checkbox" checked={!!settings.Sharing} onChange={e=>upd({ Sharing: e.target.checked })}/> {t('SettingsPageTurnOnCoChk')}</label>
+          </div>
+          <div>
+            <div className="font-semibold">{t('SettingsPageGoText')}</div>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.Mission} onChange={e=>upd({ Mission: e.target.checked })}/> {t('SettingsPageMissionChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.OldHorses} onChange={e=>upd({ OldHorses: e.target.checked })}/> {t('SettingsPageOldHorseChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.SellShit} onChange={e=>upd({ SellShit: e.target.checked })}/> {t('SettingsPageSellShitChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.LoadSleep} onChange={e=>upd({ LoadSleep: e.target.checked })}/> {t('SettingsPageLoadSleepChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.GoBabies} onChange={e=>upd({ GoBabies: e.target.checked })}/> {t('SettingsPageBabiesChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.Stroke} onChange={e=>upd({ Stroke: e.target.checked })}/> {t('SettingsPageStrokeChk')}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={!!settings.MissionOld} onChange={e=>upd({ MissionOld: e.target.checked })}/> {t('SettingsPageMissionOldChk')}</label>
+            <div className="mt-2">{t('SettingsPageHPLimitText')}</div>
+            <input className="w-full" value={settings.HealthEdge || ''} onChange={e=>upd({ HealthEdge: e.target.value })} />
+            <div className="mt-2">{t('SettingsPageStartWithText')}</div>
+            <input className="w-full" value={settings.SkipIndex || 0} onChange={e=>upd({ SkipIndex: Number(e.target.value||0) })} />
           </div>
         </div>
         <div className="flex gap-3 mt-4">
