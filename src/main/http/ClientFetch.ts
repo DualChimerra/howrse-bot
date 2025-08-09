@@ -42,6 +42,7 @@ export default class ClientFetch implements IClient {
     h.set('Origin', this.baseAddress)
     h.set('Upgrade-Insecure-Requests', '1')
     h.set('X-Requested-With', 'XMLHttpRequest')
+    try { h.set('Host', new URL(this.baseAddress).host) } catch {}
     return h
   }
 

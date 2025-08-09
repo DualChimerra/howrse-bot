@@ -78,6 +78,19 @@ export default function MainPage() {
     return keys[n] || 'Wheat'
   }
 
+  const startAll = async () => {
+    // 0 SingleOrder, 1 GlobalOrder, 2 SingleParallel, 3 GlobalParallel
+    if (globals.WorkType === 1) {
+      await window.api.work.startOrder()
+    } else if (globals.WorkType === 3) {
+      await window.api.work.startAll()
+    } else if (globals.WorkType === 2) {
+      if (selectedIdx>=0) await window.api.work.startSingle(selectedIdx)
+    } else {
+      if (selectedIdx>=0) await window.api.work.startSingle(selectedIdx)
+    }
+  }
+
   return (
     <div className="grid grid-rows-[auto_1fr_auto] h-full">
       <div className="grid grid-cols-4 gap-4">
@@ -185,7 +198,7 @@ export default function MainPage() {
 
       <div className="grid grid-cols-4 gap-2 mt-3">
         <button onClick={()=> selectedIdx>=0 && window.api.work.startSingle(selectedIdx)}>{t('MainPageStartBtn')}</button>
-        <button onClick={()=> window.api.work.startAll()}>{t('MainPageStartAllBtn')}</button>
+        <button onClick={startAll}>{t('MainPageStartAllBtn')}</button>
         <button onClick={()=> selectedIdx>=0 && window.api.work.stopSingle(selectedIdx)}>{t('MainPageStopBtn')}</button>
         <button onClick={()=> window.api.work.stopAll()}>{t('MainPageStopAllBtn')}</button>
       </div>

@@ -4,6 +4,7 @@ import { serverBaseUrls } from '@common/converters'
 import type { Settings } from '@common/types'
 import type { IClient } from '../http/IClient'
 import { parseDocument, parseDocumentFromJson } from './Parser'
+import ClientFetch from '../http/ClientFetch'
 
 export class AccountLogic {
   login: string
@@ -14,6 +15,7 @@ export class AccountLogic {
   products!: Record<string, Product>
   equ: number = 0
   passCount: string = ''
+  private proxy?: string
 
   constructor(login: string, password: string, server: Server, settings: Settings) {
     this.login = login
@@ -25,6 +27,7 @@ export class AccountLogic {
   async initClient(factory: (type: 'new'|'old', baseAddress: string, proxy?: string) => Promise<IClient>, clientType: ClientType, proxy?: string) {
     const baseUrl = serverBaseUrls[this.server]
     this.client = await factory(clientType === ClientType.New ? 'new' : 'old', baseUrl, proxy)
+    this.proxy = proxy
   }
 
   initProducts() {
@@ -50,27 +53,21 @@ export class AccountLogic {
     const baseUrl = serverBaseUrls[this.server]
     // standard servers vs equideow special login
     if (this.server === Server.FranceGaia || this.server === Server.FranceOuranos) {
-      // Phase 1: login on www.equideow.com
-      // GET "/" to retrieve hidden token
-      const preHtml = await this.client.get('/')
+      // Use equideow.com for initial login, sharing the same cookie jar
+      const temp = new ClientFetch('https://www.equideow.com', this.client.cookieJar, this.proxy)
+      const preHtml = await temp.get('/')
       const $pre = parseDocument(preHtml)
       const hidden = $pre('#authentification input').eq(0)
       const name = (hidden.attr('name') || '').toLowerCase()
       const value = (hidden.attr('value') || '').toLowerCase()
       const to = this.server === Server.FranceOuranos ? 'ouranos' : 'gaia'
       const postData = `${name}=${value}&to=${to}&login=${encodeURIComponent(this.login)}&password=${encodeURIComponent(this.password)}&redirection=&isBoxStyle=`
-      const answer = await this.client.post('/site/doLogIn', postData)
+      const answer = await temp.post('/site/doLogIn', postData)
       if (answer.includes('?identification=1') || answer.includes('"errors":[]')) {
         const urlMatch = answer.match(/"redirection":"(.*?)"}/)
         if (!urlMatch) return false
         const url = urlMatch[1].replace(/\\/g, '')
         const query = url.substring(baseUrl.length)
-        // Phase 2: switch to specific base
-        const factoryType = 'new' as const
-        const proxy = undefined
-        // keep same client but just GET the redirection on the same client baseAddress is equideow; we must create new client with baseUrl
-        // Caller should re-init client externally if base change is needed; here we assume client already has baseAddress set to final baseUrl
-        // To ensure base switch, do a GET against resolved path on current client (handled by server redirection)
         await this.client.get(query)
         this.client.setSID()
         if (load) await this.loadInfo()

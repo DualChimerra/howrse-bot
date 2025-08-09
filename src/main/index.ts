@@ -237,7 +237,7 @@ ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
   const acc = state.accounts[idx]
   const logic = await toLogic(acc)
   try {
-    await logic.client.get('/site/doLogout')
+    await logic.client.post('/site/doLogOutCoAccount', `sid=${logic.client.sid||''}`)
     acc.LoginCo = ''
     await saveAccounts(state.accounts)
     return true
@@ -358,12 +358,8 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
   return true
 })
 
-ipcMain.handle('work:startAll', async (e) => {
-  const wt = state.globalSettings?.WorkType
-  if (!(wt === WorkType.GlobalParallel || wt === WorkType.SingleParallel)) {
-    notifyAll('notify', { key: 'MainStartAllErrorMessage' })
-    return false
-  }
+// Sequential run across all accounts (Order modes)
+ipcMain.handle('work:startOrder', async (e) => {
   state.globalIsRunning = true
   const win = BrowserWindow.fromWebContents(e.sender)
   const scheduler = new Scheduler()
@@ -385,10 +381,8 @@ ipcMain.handle('work:startAll', async (e) => {
           if (kind === 'notify') notify(win, 'notify', { text: value })
           else notify(win, 'status:update', { accountIndex: i, kind, value })
         }))
-        const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
-        const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
-        await scheduler.run(farmTasks, mode, {
-          concurrency,
+        await scheduler.run(farmTasks, WorkType.GlobalOrder, {
+          concurrency: 1,
           randomPause: !!state.globalSettings?.RandomPause,
           minPauseMs: 50,
           maxPauseMs: 100,
@@ -404,9 +398,7 @@ ipcMain.handle('work:startAll', async (e) => {
         notify(win, 'status:update', { runningCount: state.runningCount })
       }
     })
-    const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
-    const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
-    await scheduler.run(tasks, mode, { concurrency })
+    await scheduler.run(tasks, WorkType.GlobalOrder, { concurrency: 1 })
   } finally {
     state.globalIsRunning = false
     notifyAll('notify', { key: 'MainNotificationEndWorkMessage' })
