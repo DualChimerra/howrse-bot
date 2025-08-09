@@ -11,6 +11,8 @@ export default function MainPage() {
   const [status, setStatus] = useState('')
   const [version, setVersion] = useState('')
   const [farms, setFarms] = useState<{ Name: string; Id: string }[]>([])
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => { const onToggle = () => setMenuOpen(v => !v); window.addEventListener('toggle-menu', onToggle); return () => window.removeEventListener('toggle-menu', onToggle) }, [])
   const selected = selectedIdx >= 0 ? accounts[selectedIdx] : null
 
   useEffect(() => {
@@ -39,7 +41,7 @@ export default function MainPage() {
   const onChangeGlobal = (patch: Partial<typeof globals>) => {
     const next = { ...globals, ...patch }
     setGlobals(next)
-    window.api.settings.apply(next.Settings || {}, 'global')
+    window.api.globals.update(next)
   }
 
   const onSelect = async (i: number) => {
@@ -61,6 +63,7 @@ export default function MainPage() {
   }
   const onRemoveFarm = async (id?: string) => { if (selectedIdx < 0 || !id) return; await window.api.farms.removeFromQueue(selectedIdx, id); await refreshState() }
   const onClearFarms = async () => { if (selectedIdx < 0) return; await window.api.farms.clearQueue(selectedIdx); await refreshState() }
+  const onReloadFarms = async () => { if (selectedIdx < 0) return; const list = await window.api.farms.load(selectedIdx); setFarms(list) }
 
   const loginCoLabel = selected?.Type === 1 ? t('LogoffCoConverter') : t('LoginCoConverter')
   const onLoginCo = async () => {
@@ -78,7 +81,7 @@ export default function MainPage() {
   return (
     <div className="grid grid-rows-[auto_1fr_auto] h-full">
       <div className="grid grid-cols-4 gap-4">
-        <aside className="bg-card p-3 rounded-xl w-64">
+        <aside className={`bg-card p-3 rounded-xl w-64 transition-all ${menuOpen ? 'opacity-100' : 'opacity-80'}`}>
           <div className="space-y-2">
             <label className="flex items-center gap-2"><input type="checkbox" checked={!!globals.RandomPause} onChange={e=>onChangeGlobal({ RandomPause: e.target.checked })}/> {t('MainMenuRandomPausesChk')}</label>
             <hr />
@@ -123,8 +126,8 @@ export default function MainPage() {
           <button onClick={()=>{ window.api.accounts.saveCoSelected() }}>{t('MainPageSaveCoBtn')}</button>
           <button onClick={()=> window.location.assign('/settings')}>{t('MainPageSettingsBtn')}</button>
           <button onClick={()=> window.location.assign('/management')}>{t('MainPageAccManagmentBtn')}</button>
-          <button onClick={()=> window.api.accounts.saveAll()}>{t('MainPageSaveAccListBtn')}</button>
-          <button onClick={async ()=>{ const accs = await window.api.accounts.loadAll(); setAccounts(accs) }}>{t('MainPageLoadAccListBtn')}</button>
+          <button onClick={()=> window.api.accounts.saveToFile()}>{t('MainPageSaveAccListBtn')}</button>
+          <button onClick={async ()=>{ const accs = await window.api.accounts.loadFromFile(); setAccounts(accs) }}>{t('MainPageLoadAccListBtn')}</button>
           <button onClick={()=> window.location.assign('/status')}>{t('MainPageOpenStatusBtn')}</button>
         </div>
 
@@ -139,6 +142,43 @@ export default function MainPage() {
             <div>{t('MainPageShitText')}: {selected?.Shit?.Amount ?? ''}</div>
             <div>{t(productName(selected?.MainProductToSell?.Type))}: {selected?.MainProductToSell?.Amount ?? ''}</div>
             <div>{t(productName(selected?.SubProductToSell?.Type))}: {selected?.SubProductToSell?.Amount ?? ''}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-card rounded-xl p-2">
+              <div className="flex items-center justify-between mb-1">
+                <div className="font-semibold">{t('MainPageFarmsList')}</div>
+                <button className="text-xs" onClick={onReloadFarms}>{t('MainPageReloadFarmsBtn')}</button>
+              </div>
+              <div className="h-48 overflow-auto">
+                {farms.map(f => (
+                  <div key={f.Id + f.Name} className="px-2 py-1 cursor-pointer hover:bg-accent/10" onClick={()=>onAddFarm(f.Id)}>
+                    {f.Name}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-right">
+                <button className="text-xs" onClick={()=>onAddFarm('')}>{t('MainPageAddAllFarmsBtn')}</button>
+              </div>
+            </div>
+            <div className="bg-card rounded-xl p-2">
+              <div className="flex items-center justify-between mb-1">
+                <div className="font-semibold">{t('MainPageQueueList')}</div>
+                <div className="flex gap-2">
+                  <button className="text-xs" onClick={onClearFarms}>{t('MainPageClearQueueBtn')}</button>
+                </div>
+              </div>
+              <div className="h-48 overflow-auto">
+                {(selected?.FarmsQueue||[]).map((id: string) => {
+                  const name = farms.find(f=>f.Id===id)?.Name || (id ? id : t('MainPageAllFarms'))
+                  return (
+                    <div key={id} className="px-2 py-1 flex items-center justify-between">
+                      <span>{name}</span>
+                      <button className="text-xs" onClick={()=>onRemoveFarm(id)}>{t('MainPageRemoveBtn')}</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </div>

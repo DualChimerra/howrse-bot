@@ -19,6 +19,8 @@ const api = {
     removeSelected: () => ipcRenderer.invoke('accounts:removeSelected'),
     saveAll: () => ipcRenderer.invoke('accounts:saveAll'),
     loadAll: () => ipcRenderer.invoke('accounts:loadAll'),
+    saveToFile: () => ipcRenderer.invoke('accounts:saveToFile'),
+    loadFromFile: () => ipcRenderer.invoke('accounts:loadFromFile'),
     saveCoSelected: () => ipcRenderer.invoke('accounts:saveCoSelected'),
   },
   // login
@@ -49,7 +51,7 @@ const api = {
   },
   // storage direct (for saved accounts XML)
   storage: {
-    loadAccounts: () => ipcRenderer.invoke('state:get').then((s: any) => s.accounts || []),
+    loadAccounts: () => ipcRenderer.invoke('accounts:loadAll'),
     saveAccounts: (arr: any[]) => ipcRenderer.invoke('accounts:saveAll', arr),
   },
   // work
@@ -59,10 +61,18 @@ const api = {
     stopSingle: (idx: number) => ipcRenderer.invoke('work:stopSingle', idx),
     stopAll: () => ipcRenderer.invoke('work:stopAll'),
   },
+  // globals
+  globals: {
+    update: (patch: any) => ipcRenderer.invoke('globals:update', patch),
+  },
   // events
   events: {
     onNotify: (cb: (payload: any) => void) => ipcRenderer.on('notify', (_e, payload) => cb(payload)),
     onStatusUpdate: (cb: (payload: any) => void) => ipcRenderer.on('status:update', (_e, payload) => cb(payload)),
+  },
+  // resources
+  resources: {
+    get: (name: 'ruFlag'|'usaFlag'|'logo'|'arrow') => ipcRenderer.invoke('resources:get', name),
   },
 }
 

@@ -11,10 +11,24 @@ export default function StatusPage() {
 
   useEffect(() => {
     (async () => { const s = await window.api.state.get(); setAccounts(s.accounts||[]); setSelected(s.selected||0) })()
-    window.api.events.onNotify((p) => setNotifications(n => [...n, p.text]))
+    window.api.events.onNotify((p) => {
+      if (p?.key) setNotifications(n => [...n, t(p.key)])
+      else if (p?.text) setNotifications(n => [...n, p.text])
+    })
     window.api.events.onStatusUpdate((p) => {
       if (typeof p.runningCount !== 'undefined') setRunningCount(p.runningCount)
       if (typeof p.doneCount !== 'undefined') setDoneCount(p.doneCount)
+      if (typeof p.accountIndex === 'number' && p.kind && typeof p.value === 'string') {
+        setAccounts(prev => {
+          const next = prev.slice()
+          const acc = { ...(next[p.accountIndex] || {}) }
+          if (p.kind === 'farm') acc.ProgressFarm = p.value
+          else if (p.kind === 'horse') acc.ProgressHorse = p.value
+          else if (p.kind === 'status') acc.Progress = p.value
+          next[p.accountIndex] = acc
+          return next
+        })
+      }
     })
   }, [])
 

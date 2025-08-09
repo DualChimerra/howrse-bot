@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const rows = ['Hay','Oat','Wheat','Shit','Leather','Apples','Carrot','Wood','Steel','Sand','Straw','Flax'] as const
+const rows = ['Hay','Oat','Wheat','Shit','Leather','Apples','Carrot','Wood','Steel','Sand','Straw','Flax','OR'] as const
 
 export default function ManagementPage() {
   const { t } = useTranslation()
@@ -31,9 +31,10 @@ export default function ManagementPage() {
 
   const rowsUi = useMemo(() => rows.map((r) => {
     const key = r as string
+    const tkey = r === 'Apples' ? 'Apple' : r
     return (
       <React.Fragment key={r}>
-        <div className="text-right">{t('ManagmentPage' + (r === 'Apples' ? 'Apple' : r))}</div>
+        <div className="text-right">{t('ManagmentPage' + tkey)}</div>
         <input className="w-28" value={vals[key] || ''} onChange={e=>setVals(v=>({ ...v, [key]: e.target.value }))} />
         <button onClick={()=>onBuy(key)}>{t('ManagmentPageBuyBtn')}</button>
         <button onClick={()=>onSell(key)}>{t('ManagmentPageSellBtn')}</button>

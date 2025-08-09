@@ -4,10 +4,84 @@ import { useTranslation } from 'react-i18next'
 export default function SettingsPage() {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<any>({})
+  const [scope, setScope] = useState<'global'|'single'>('global')
 
-  useEffect(() => { (async () => { const s = await window.api.state.get(); setSettings((s.globalSettings||{}).Settings || {}) })() }, [])
+  useEffect(() => { (async () => {
+    const s = await window.api.state.get();
+    const wt = s.globalSettings?.WorkType ?? 0
+    const selectedIdx = s.selected ?? -1
+    const useSingle = (wt === 0 || wt === 2) && selectedIdx >= 0
+    setScope(useSingle ? 'single' : 'global')
+    if (useSingle) {
+      const acc = s.accounts[selectedIdx]
+      setSettings(acc?.PrivateSettings || acc?.Settings || defaultSettings())
+    } else {
+      setSettings((s.globalSettings||{}).Settings || defaultSettings())
+    }
+  })() }, [])
 
   const upd = (patch: any) => setSettings((s: any) => ({ ...s, ...patch }))
+
+  const productOptions = [
+    { value: 1, key: 'Hay' },
+    // { value: 2, key: 'Oat' }, // excluded
+    { value: 3, key: 'Wheat' },
+    // { value: 4, key: 'Shit' }, // excluded
+    { value: 5, key: 'Leather' },
+    { value: 6, key: 'Apples' },
+    { value: 7, key: 'Carrot' },
+    { value: 8, key: 'Wood' },
+    { value: 9, key: 'Steel' },
+    { value: 10, key: 'Sand' },
+    { value: 11, key: 'Straw' },
+    { value: 12, key: 'Flax' },
+    // { value: 13, key: 'OR' }, // excluded
+  ]
+
+  function defaultSettings() {
+    return {
+      HorsingFemale: false,
+      HorsingFemalePrice: '500',
+      Breeder: '',
+      ClearBlood: false,
+      SelfMale: false,
+      BuyWheat: false,
+      HorsingFemaleCommand: false,
+      GPEdge: '1000',
+      HorsingMale: false,
+      HorsingMaleCommand: false,
+      HorsingMalePrice: '500',
+      Carrot: false,
+      MaleName: 'Муж',
+      FemaleName: 'Жен',
+      Affix: '',
+      Farm: '',
+      RandomNames: false,
+      CentreDuration: '3',
+      CentreHay: false,
+      CentreOat: false,
+      ReserveID: '',
+      ReserveDuration: '',
+      ContinueDuration: '',
+      SelfReserve: false,
+      WriteToAll: false,
+      Continue: false,
+      BuyHay: '500',
+      BuyOat: '500',
+      MainProductToSell: 3, // Wheat
+      SubProductToSell: 0, // None
+      SellShit: false,
+      Mission: false,
+      OldHorses: false,
+      HealthEdge: '0',
+      SkipIndex: 0,
+      LoadSleep: true,
+      GoBabies: false,
+      Stroke: false,
+      MissionOld: false,
+      Sharing: false,
+    }
+  }
 
   return (
     <div className="grid grid-cols-3 gap-4">
@@ -92,12 +166,12 @@ export default function SettingsPage() {
             </select>
             <hr className="my-2" />
             <div>{t('SettingsPageSellMainText')}</div>
-            <select className="w-full" value={settings.MainProductToSell || 0} onChange={e=>upd({ MainProductToSell: Number(e.target.value) })}>
-              {Array.from({length: 15}).map((_,i)=> <option key={i} value={i}>{i}</option>)}
+            <select className="w-full" value={settings.MainProductToSell ?? 3} onChange={e=>upd({ MainProductToSell: Number(e.target.value) })}>
+              {productOptions.map(o => <option key={o.value} value={o.value}>{t(o.key)}</option>)}
             </select>
             <div>{t('SettingsPageSellSubText')}</div>
-            <select className="w-full" value={settings.SubProductToSell || 0} onChange={e=>upd({ SubProductToSell: Number(e.target.value) })}>
-              {Array.from({length: 15}).map((_,i)=> <option key={i} value={i}>{i}</option>)}
+            <select className="w-full" value={settings.SubProductToSell ?? 0} onChange={e=>upd({ SubProductToSell: Number(e.target.value) })}>
+              {[{ value: 0, key: 'None' }, ...productOptions].map(o => <option key={o.value} value={o.value}>{t(o.key)}</option>)}
             </select>
             <label className="flex items-center gap-2 mt-2"><input type="checkbox" checked={!!settings.Sharing} onChange={e=>upd({ Sharing: e.target.checked })}/> {t('SettingsPageTurnOnCoChk')}</label>
           </div>
@@ -117,7 +191,10 @@ export default function SettingsPage() {
           </div>
         </div>
         <div className="flex gap-3 mt-4">
-          <button onClick={()=> window.api.settings.apply(settings, 'global')}>{t('SettingsPageSaveBtn')}</button>
+          <button onClick={async ()=> { await window.api.settings.apply(settings, scope); window.location.assign('/') }}>{t('SettingsPageAcceptBtn')}</button>
+          <button onClick={async ()=> { await window.api.settings.saveToFile(settings) }}>{t('SettingsPageSaveBtn')}</button>
+          <button onClick={async ()=> { const gs = await window.api.settings.loadFromFile(); const s = (gs?.Settings)||{}; setSettings(s) }}>{t('SettingsPageLoadBtn')}</button>
+          <button onClick={()=> setSettings(defaultSettings())}>{t('SettingsPageRefreshBtn')}</button>
           <button onClick={()=> window.location.assign('/')}>{t('SettingsPageReturnBtn')}</button>
         </div>
       </section>

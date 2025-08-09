@@ -1,11 +1,14 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
-import { loadAccounts, saveAccounts, loadGlobalSettings, saveGlobalSettings, getSettingsPaths } from './storage/XmlHelper'
+import { ipcMain, BrowserWindow, app, dialog } from 'electron'
+import { loadAccounts, saveAccounts, loadGlobalSettings, saveGlobalSettings, getSettingsPaths, saveAccountsToPath, loadAccountsFromPath, saveSettingsToPath, loadSettingsFromPath } from './storage/XmlHelper'
 import { getClientFactory } from './http/IClient'
 import { AccountLogic } from './logic/Account'
 import { serverBaseUrls } from '@common/converters'
 import type { Account, GlobalSettings, Settings } from '@common/types'
 import { ProductType, WorkType, ClientType, Server } from '@common/enums'
 import { Farm } from './logic/Farm'
+import { Scheduler } from './logic/Scheduler'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // In-memory state reflecting WPF MainViewModel
 const state = {
@@ -19,6 +22,8 @@ const state = {
   doneCount: 0,
   globalIsRunning: false,
 }
+
+const controllers = new Map<number, AbortController>()
 
 function getSelectedAccount(): Account | null {
   if (state.selectedAccountIndex < 0) return null
@@ -35,6 +40,24 @@ function notifyAll(channel: string, payload: any) {
     w.webContents.send(channel, payload)
   }
 }
+
+// Resources IPC
+ipcMain.handle('resources:get', async (_e, name: 'ruFlag'|'usaFlag'|'logo'|'arrow') => {
+  const map: Record<string, string> = {
+    ruFlag: 'ruFlag.png',
+    usaFlag: 'usaFlag.png',
+    logo: 'startlogo.png',
+    arrow: 'Arrow.png',
+  }
+  const file = map[name]
+  if (!file) return null
+  try {
+    const p = join(process.resourcesPath, 'resources', file)
+    const buf = readFileSync(p)
+    const b64 = `data:image/${file.endsWith('.png')?'png':'ico'};base64,${buf.toString('base64')}`
+    return b64
+  } catch { return null }
+})
 
 // IPC: window controls
 ipcMain.handle('window:minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); w?.minimize() })
@@ -70,14 +93,47 @@ ipcMain.handle('accounts:add', async (_e, acc: Account) => {
 
 ipcMain.handle('accounts:removeSelected', async () => {
   if (state.selectedAccountIndex < 0) return false
+  const wt = state.globalSettings?.WorkType
+  const acc = state.accounts[state.selectedAccountIndex]
+  // WPF: forbid removing while running
+  if ((wt === WorkType.GlobalParallel || wt === WorkType.SingleParallel) && (acc as any)?.IsRunning) {
+    notifyAll('notify', { key: 'MainDeleteAccError1' })
+    return false
+  }
+  if ((wt === WorkType.GlobalOrder || wt === WorkType.SingleOrder) && state.globalIsRunning) {
+    notifyAll('notify', { key: 'MainDeleteAccError2' })
+    return false
+  }
   state.accounts.splice(state.selectedAccountIndex, 1)
   state.selectedAccountIndex = Math.min(state.selectedAccountIndex, state.accounts.length - 1)
   await saveAccounts(state.accounts)
   return true
 })
 
-ipcMain.handle('accounts:saveAll', async () => { await saveAccounts(state.accounts); return true })
+ipcMain.handle('accounts:saveAll', async (_e, maybeArr?: Account[]) => {
+  if (Array.isArray(maybeArr)) state.accounts = maybeArr
+  await saveAccounts(state.accounts); return true
+})
+
 ipcMain.handle('accounts:loadAll', async () => { state.accounts = await loadAccounts() as Account[]; return state.accounts })
+
+ipcMain.handle('accounts:saveToFile', async () => {
+  const { accPath } = getSettingsPaths()
+  const result = await dialog.showSaveDialog({ title: 'Save Accounts', defaultPath: accPath, filters: [{ name: 'XML', extensions: ['xml'] }] })
+  if (result.canceled || !result.filePath) return false
+  await saveAccountsToPath(state.accounts, result.filePath)
+  return true
+})
+
+ipcMain.handle('accounts:loadFromFile', async () => {
+  const { accPath } = getSettingsPaths()
+  const result = await dialog.showOpenDialog({ title: 'Load Accounts', defaultPath: accPath, filters: [{ name: 'XML', extensions: ['xml'] }], properties: ['openFile'] })
+  if (result.canceled || !result.filePaths?.[0]) return []
+  const arr = await loadAccountsFromPath(result.filePaths[0]) as Account[]
+  state.accounts = arr
+  await saveAccounts(state.accounts)
+  return state.accounts
+})
 
 // Save only selected sharing account into Accounts.xml if not exists (WPF SaveCoAccountToFile)
 ipcMain.handle('accounts:saveCoSelected', async () => {
@@ -106,21 +162,42 @@ ipcMain.handle('settings:apply', async (_e, settings: Settings, scope: 'global'|
   return true
 })
 
-ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => { await saveGlobalSettings({ ...(state.globalSettings||{}), Settings: settings } as any); return true })
-ipcMain.handle('settings:loadFromFile', async () => loadGlobalSettings())
+ipcMain.handle('settings:saveToFile', async (_e, settings: Settings) => {
+  const { globalPath } = getSettingsPaths()
+  const result = await dialog.showSaveDialog({ title: 'Save Settings', defaultPath: globalPath, filters: [{ name: 'XML', extensions: ['xml'] }] })
+  if (result.canceled || !result.filePath) return false
+  const data = { ...(state.globalSettings||{}), Settings: settings } as any
+  await saveSettingsToPath(data, result.filePath)
+  return true
+})
+ipcMain.handle('settings:loadFromFile', async () => {
+  const { globalPath } = getSettingsPaths()
+  const result = await dialog.showOpenDialog({ title: 'Load Settings', defaultPath: globalPath, filters: [{ name: 'XML', extensions: ['xml'] }], properties: ['openFile'] })
+  if (result.canceled || !result.filePaths?.[0]) return {}
+  const obj = await loadSettingsFromPath(result.filePaths[0])
+  return obj
+})
+
+ipcMain.handle('globals:update', async (_e, patch: Partial<GlobalSettings>) => {
+  if (!state.globalSettings) state.globalSettings = {} as any
+  state.globalSettings = { ...state.globalSettings, ...patch }
+  await saveGlobalSettings(state.globalSettings)
+  notifyAll('status:update', { globalSettings: state.globalSettings })
+  return state.globalSettings
+})
 
 // Login
-function toLogic(acc: Account): AccountLogic {
+async function toLogic(acc: Account): Promise<AccountLogic> {
   const logic = new AccountLogic(acc.Login, acc.Password, acc.Server, (acc.Settings || acc.PrivateSettings) as Settings)
   const proxy = acc.ProxyIP ? `http://${acc.ProxyLogin && acc.ProxyPassword ? `${acc.ProxyLogin}:${acc.ProxyPassword}@` : ''}${acc.ProxyIP}` : undefined
-  logic.initClient(getClientFactory(), (state.globalSettings?.ClientType ?? ClientType.New) as any, proxy)
+  await logic.initClient(getClientFactory(), (state.globalSettings?.ClientType ?? ClientType.New) as any, proxy)
   logic.initProducts()
   return logic
 }
 
 ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const ok = await logic.loginNormal(load)
   if (ok) {
     acc.Equ = logic.equ
@@ -132,7 +209,7 @@ ipcMain.handle('login:normal', async (_e, idx: number, load: boolean) => {
 
 ipcMain.handle('login:co', async (_e, idx: number, loginCo: string, load: boolean) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const ok = await logic.loginCo(loginCo, load)
   if (ok) {
     acc.LoginCo = loginCo
@@ -143,7 +220,7 @@ ipcMain.handle('login:co', async (_e, idx: number, loginCo: string, load: boolea
 
 ipcMain.handle('login:listCo', async (_e, idx: number) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const html = await logic.client.get('/member/account/?type=sharing')
   const { parseDocument } = await import('./logic/Parser')
   const $ = parseDocument(html)
@@ -158,7 +235,7 @@ ipcMain.handle('login:listCo', async (_e, idx: number) => {
 
 ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   try {
     await logic.client.get('/site/doLogout')
     acc.LoginCo = ''
@@ -169,7 +246,7 @@ ipcMain.handle('login:logoutCo', async (_e, idx: number) => {
 
 ipcMain.handle('farms:load', async (_e, idx: number) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const html = await logic.client.get('/elevage/chevaux/?elevage=all-horses')
   const { parseDocument } = await import('./logic/Parser')
   const $ = parseDocument(html)
@@ -209,7 +286,7 @@ ipcMain.handle('farms:clearQueue', async (_e, idx: number) => {
 
 ipcMain.handle('products:buy', async (_e, idx: number, type: ProductType, quantity: string) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   await logic.loginNormal(false).catch(()=>{})
   const prod = logic.getProductByType(type)
   if (!prod) return false
@@ -223,7 +300,7 @@ ipcMain.handle('products:buy', async (_e, idx: number, type: ProductType, quanti
 
 ipcMain.handle('products:sell', async (_e, idx: number, type: ProductType, quantity: string) => {
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   await logic.loginNormal(false).catch(()=>{})
   const prod = logic.getProductByType(type)
   if (!prod) return false
@@ -238,24 +315,43 @@ ipcMain.handle('products:sell', async (_e, idx: number, type: ProductType, quant
 ipcMain.handle('work:startSingle', async (e, idx: number) => {
   const win = BrowserWindow.fromWebContents(e.sender)
   const acc = state.accounts[idx]
-  const logic = toLogic(acc)
+  const logic = await toLogic(acc)
   const farms = (acc.FarmsQueue || []).map(fid => new Farm('', fid, logic))
   if (farms.length === 0) farms.push(new Farm('all', '', logic))
+
+  const controller = new AbortController()
+  controllers.set(idx, controller)
+  ;(acc as any).IsRunning = true
 
   state.runningCount++
   notify(win, 'status:update', { runningCount: state.runningCount })
 
-  const controller = new AbortController()
+  const scheduler = new Scheduler()
   try {
-    for (const farm of farms) {
-      await farm.run(state.globalSettings!, controller.signal)
-    }
+    const tasks = farms.map((farm) => async (signal?: AbortSignal) => {
+      await farm.run(state.globalSettings!, signal || controller.signal, (kind, value) => {
+        if (kind === 'notify') notify(win, 'notify', { text: value })
+        else notify(win, 'status:update', { accountIndex: idx, kind, value })
+      })
+    })
+    const mode = state.globalSettings?.WorkType ?? WorkType.SingleOrder
+    const concurrency = mode === WorkType.SingleParallel ? 5 : 1
+    await scheduler.run(tasks, mode, {
+      concurrency,
+      randomPause: !!state.globalSettings?.RandomPause,
+      minPauseMs: 50,
+      maxPauseMs: 100,
+      signal: controller.signal,
+    })
     state.doneCount++
+    ;(acc as any).IsDone = true
     notify(win, 'status:update', { doneCount: state.doneCount })
   } catch (err) {
     state.notifications.push(`Error: ${String(err)}`)
     notify(win, 'notify', { text: state.notifications[state.notifications.length - 1] })
   } finally {
+    controllers.delete(idx)
+    ;(acc as any).IsRunning = false
     state.runningCount = Math.max(0, state.runningCount - 1)
     notify(win, 'status:update', { runningCount: state.runningCount })
   }
@@ -263,15 +359,128 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
 })
 
 ipcMain.handle('work:startAll', async (e) => {
-  const tasks = state.accounts.map((_, i) => ipcMain.emit('work:startSingle' as any, e, i))
+  const wt = state.globalSettings?.WorkType
+  if (!(wt === WorkType.GlobalParallel || wt === WorkType.SingleParallel)) {
+    notifyAll('notify', { key: 'MainStartAllErrorMessage' })
+    return false
+  }
+  state.globalIsRunning = true
+  const win = BrowserWindow.fromWebContents(e.sender)
+  const scheduler = new Scheduler()
+  try {
+    const indices = state.accounts.map((_, i) => i)
+    const tasks = indices.map((i) => async (signal?: AbortSignal) => {
+      if (!state.globalIsRunning) return
+      const acc = state.accounts[i]
+      const logic = await toLogic(acc)
+      const farms = (acc.FarmsQueue || []).map(fid => new Farm('', fid, logic))
+      if (farms.length === 0) farms.push(new Farm('all', '', logic))
+      const controller = new AbortController()
+      controllers.set(i, controller)
+      ;(acc as any).IsRunning = true
+      state.runningCount++
+      notify(win, 'status:update', { runningCount: state.runningCount })
+      try {
+        const farmTasks = farms.map((farm) => async (sig?: AbortSignal) => farm.run(state.globalSettings!, sig || controller.signal, (kind, value) => {
+          if (kind === 'notify') notify(win, 'notify', { text: value })
+          else notify(win, 'status:update', { accountIndex: i, kind, value })
+        }))
+        const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
+        const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
+        await scheduler.run(farmTasks, mode, {
+          concurrency,
+          randomPause: !!state.globalSettings?.RandomPause,
+          minPauseMs: 50,
+          maxPauseMs: 100,
+          signal: controller.signal,
+        })
+        state.doneCount++
+        ;(acc as any).IsDone = true
+        notify(win, 'status:update', { doneCount: state.doneCount })
+      } finally {
+        controllers.delete(i)
+        ;(acc as any).IsRunning = false
+        state.runningCount = Math.max(0, state.runningCount - 1)
+        notify(win, 'status:update', { runningCount: state.runningCount })
+      }
+    })
+    const mode = state.globalSettings?.WorkType ?? WorkType.GlobalOrder
+    const concurrency = mode === WorkType.GlobalParallel ? 5 : 1
+    await scheduler.run(tasks, mode, { concurrency })
+  } finally {
+    state.globalIsRunning = false
+    notifyAll('notify', { key: 'MainNotificationEndWorkMessage' })
+  }
   return true
 })
 
-ipcMain.handle('work:stopSingle', async () => {
+ipcMain.handle('work:stopSingle', async (_e, idx: number) => {
+  const c = controllers.get(idx)
+  if (c) c.abort()
+  controllers.delete(idx)
   return true
 })
 
 ipcMain.handle('work:stopAll', async () => {
   state.globalIsRunning = false
+  for (const c of controllers.values()) c.abort()
+  controllers.clear()
   return true
 })
+
+// Dev-only autorun for My other horses
+async function devAutoRunMyOther() {
+  if (process.env.AUTO_RUN_MYOTHER !== '1') return
+  const loginEnv = process.env.HOWRSE_LOGIN || ''
+  const passEnv = process.env.HOWRSE_PASSWORD || ''
+  if (!loginEnv || !passEnv) return
+  const serverEnv = Number(process.env.HOWRSE_SERVER || '')
+  const server = Number.isFinite(serverEnv) ? serverEnv as any : Server.International
+
+  // ensure global settings
+  if (!state.globalSettings) {
+    const globals = await loadGlobalSettings() as any
+    state.globalSettings = globals || { Sort: 'age', WorkType: WorkType.SingleOrder, ClientType: ClientType.New, ParallelHorse: false, RandomPause: false, Tray: true, MoneyNotification: false, Localization: 0, Settings: {} as any }
+  }
+
+  // ensure an account exists
+  let acc = state.accounts[0]
+  if (!acc) {
+    acc = {
+      Login: loginEnv,
+      Password: passEnv,
+      Server: server,
+      Type: 0,
+      PrivateSettings: {} as any,
+      ProxyIP: '', ProxyLogin: '', ProxyPassword: '',
+      FarmsQueue: [''],
+    } as any
+    state.accounts = [acc as any]
+  } else {
+    acc.Login = loginEnv
+    acc.Password = passEnv
+    acc.Server = server as any
+    acc.FarmsQueue = acc.FarmsQueue && Array.isArray(acc.FarmsQueue) ? acc.FarmsQueue : []
+    if (!acc.FarmsQueue.includes('')) acc.FarmsQueue.push('')
+  }
+  state.selectedAccountIndex = 0
+  await saveAccounts(state.accounts)
+
+  // run single using same logic
+  const logic = await toLogic(acc as any)
+  const farms = ((acc as any).FarmsQueue || []).map((fid: string) => new Farm('', fid, logic))
+  if (farms.length === 0) farms.push(new Farm('all', '', logic))
+  const controller = new AbortController()
+  const scheduler = new Scheduler()
+  try {
+    const tasks = farms.map((farm) => async (signal?: AbortSignal) => farm.run(state.globalSettings!, signal || controller.signal))
+    await scheduler.run(tasks, WorkType.SingleOrder, { concurrency: 1, randomPause: !!state.globalSettings?.RandomPause, minPauseMs: 50, maxPauseMs: 100, signal: controller.signal })
+    await saveAccounts(state.accounts)
+  } catch {}
+  if (process.env.AUTO_EXIT === '1') {
+    app.quit()
+  }
+}
+
+// schedule autorun
+setTimeout(() => { devAutoRunMyOther().catch(()=>{}) }, 2000)
