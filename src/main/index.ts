@@ -93,6 +93,17 @@ ipcMain.handle('accounts:add', async (_e, acc: Account) => {
 
 ipcMain.handle('accounts:removeSelected', async () => {
   if (state.selectedAccountIndex < 0) return false
+  const wt = state.globalSettings?.WorkType
+  const acc = state.accounts[state.selectedAccountIndex]
+  // WPF: forbid removing while running
+  if ((wt === WorkType.GlobalParallel || wt === WorkType.SingleParallel) && (acc as any)?.IsRunning) {
+    notifyAll('notify', { key: 'MainDeleteAccError1' })
+    return false
+  }
+  if ((wt === WorkType.GlobalOrder || wt === WorkType.SingleOrder) && state.globalIsRunning) {
+    notifyAll('notify', { key: 'MainDeleteAccError2' })
+    return false
+  }
   state.accounts.splice(state.selectedAccountIndex, 1)
   state.selectedAccountIndex = Math.min(state.selectedAccountIndex, state.accounts.length - 1)
   await saveAccounts(state.accounts)
@@ -278,6 +289,7 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
 
   const controller = new AbortController()
   controllers.set(idx, controller)
+  ;(acc as any).IsRunning = true
 
   state.runningCount++
   notify(win, 'status:update', { runningCount: state.runningCount })
@@ -299,12 +311,14 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
       signal: controller.signal,
     })
     state.doneCount++
+    ;(acc as any).IsDone = true
     notify(win, 'status:update', { doneCount: state.doneCount })
   } catch (err) {
     state.notifications.push(`Error: ${String(err)}`)
     notify(win, 'notify', { text: state.notifications[state.notifications.length - 1] })
   } finally {
     controllers.delete(idx)
+    ;(acc as any).IsRunning = false
     state.runningCount = Math.max(0, state.runningCount - 1)
     notify(win, 'status:update', { runningCount: state.runningCount })
   }
@@ -312,6 +326,11 @@ ipcMain.handle('work:startSingle', async (e, idx: number) => {
 })
 
 ipcMain.handle('work:startAll', async (e) => {
+  const wt = state.globalSettings?.WorkType
+  if (!(wt === WorkType.GlobalParallel || wt === WorkType.SingleParallel)) {
+    notifyAll('notify', { key: 'MainStartAllErrorMessage' })
+    return false
+  }
   state.globalIsRunning = true
   const win = BrowserWindow.fromWebContents(e.sender)
   const scheduler = new Scheduler()
@@ -325,6 +344,7 @@ ipcMain.handle('work:startAll', async (e) => {
       if (farms.length === 0) farms.push(new Farm('all', '', logic))
       const controller = new AbortController()
       controllers.set(i, controller)
+      ;(acc as any).IsRunning = true
       state.runningCount++
       notify(win, 'status:update', { runningCount: state.runningCount })
       try {
@@ -341,9 +361,11 @@ ipcMain.handle('work:startAll', async (e) => {
           signal: controller.signal,
         })
         state.doneCount++
+        ;(acc as any).IsDone = true
         notify(win, 'status:update', { doneCount: state.doneCount })
       } finally {
         controllers.delete(i)
+        ;(acc as any).IsRunning = false
         state.runningCount = Math.max(0, state.runningCount - 1)
         notify(win, 'status:update', { runningCount: state.runningCount })
       }
